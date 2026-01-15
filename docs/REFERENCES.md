@@ -67,6 +67,12 @@ This document contains references to other projects, libraries, and resources th
 - **std.process**: Built-in process spawning
 - **std.ChildProcess**: For capturing output
 
+### Async I/O (Not Recommended for v1)
+- **libxev**: https://github.com/mitchellh/libxev (Cross-platform event loop, io_uring/epoll/kqueue)
+  - **When to use**: Concurrent I/O operations, interactive features with background work
+  - **When NOT to use**: Sequential agent loop (our use case), constrained devices
+  - **Note**: io_uring requires kernel 5.1+, Nokia N900 has 2.6
+
 ### Terminal UI
 - **vaxis**: https://github.com/rockorager/libvaxis (Pure Zig TUI library, ~50-100KB)
 - **zig-cli**: https://github.com/sam701/zig-cli (CLI argument parsing)
