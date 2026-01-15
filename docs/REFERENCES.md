@@ -68,9 +68,16 @@ This document contains references to other projects, libraries, and resources th
 - **std.ChildProcess**: For capturing output
 
 ### Terminal UI
-- **zig-cli**: https://github.com/sam701/zig-cli (CLI parsing)
-- **vaxis**: https://github.com/rockorager/libvaxis (TUI library)
-- **ansi-term**: Raw ANSI escape codes (minimal dependency)
+- **vaxis**: https://github.com/rockorager/libvaxis (Pure Zig TUI library, ~50-100KB)
+- **zig-cli**: https://github.com/sam701/zig-cli (CLI argument parsing)
+- **termbox2**: https://github.com/termbox/termbox2 (Minimal C TUI library, ~100KB)
+- **Clay**: https://github.com/nicbarker/clay (High-performance UI layout library, ~15KB)
+  - **clay-zig**: https://github.com/raugl/clay-zig (Zig bindings)
+  - **Use case**: Flex-box layouts, can pair with termbox2 for advanced UIs
+- **ncurses**: Standard Unix TUI library (heavy, ~500KB-1MB, not recommended)
+- **notcurses**: Modern TUI with multimedia (too heavy for embedded)
+- **ANSI Escape Codes**: https://en.wikipedia.org/wiki/ANSI_escape_code (Standard reference)
+- **XTerm Control Sequences**: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html (Comprehensive guide)
 
 ### File Watching
 - **std.fs.watch**: Platform-specific file watching (limited)

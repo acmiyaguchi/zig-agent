@@ -26,8 +26,9 @@ docs/
     ├── api-client.md            # Claude API communication
     ├── streaming.md             # SSE response handling
     ├── tool-execution.md        # Tool system design
+    ├── file-operations.md       # File I/O implementation
     ├── performance-constraints.md # Target metrics and optimization
-    └── file-operations.md       # File I/O implementation
+    └── terminal-ui.md           # Terminal interface and rendering
 ```
 
 ## Reading Guide
@@ -126,6 +127,15 @@ Defines target performance metrics based on Nokia N900 hardware specs.
 - Target hardware specifications
 - Performance budgets (memory, latency, throughput)
 - ARM-specific optimizations
+
+### [terminal-ui.md](concepts/terminal-ui.md)
+Evaluates terminal UI approaches and rendering efficiency strategies.
+
+**Key topics**:
+- Library evaluation (ncurses, termbox2, Clay, vaxis, raw ANSI)
+- Efficient rendering (buffering, differential updates, rate limiting)
+- Display patterns (streaming text, progress indicators, status bars)
+- Progressive implementation (raw ANSI → termbox2 → termbox2+Clay)
 
 ## References
 
