@@ -23,6 +23,7 @@ docs/
 └── concepts/                     # Core design concepts
     ├── architecture.md           # Overall system architecture
     ├── memory-management.md      # Memory allocation strategies
+    ├── conversation-state.md    # Message tracking and serialization
     ├── api-client.md            # Claude API communication
     ├── streaming.md             # SSE response handling
     ├── tool-execution.md        # Tool system design
@@ -87,6 +88,15 @@ Details the memory allocation strategy critical for running on devices with only
 - Allocator hierarchy (GPA, Arena, Fixed Buffer)
 - Memory budgets and limits
 - Optimization techniques (zero-copy, pooling)
+
+### [conversation-state.md](concepts/conversation-state.md)
+Covers efficient data structures for tracking conversation history and minimizing JSON serialization overhead.
+
+**Key topics**:
+- In-memory message representation (ring buffers, arena allocators)
+- Lazy serialization (only when sending to API)
+- Incremental parsing (stream events, don't buffer entire responses)
+- Context window management and message pruning
 
 ### [api-client.md](concepts/api-client.md)
 Explains how we communicate efficiently with the Claude API.

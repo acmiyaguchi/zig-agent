@@ -185,16 +185,93 @@ Don't render if terminal is backgrounded or not a TTY. Zero CPU when not visible
 #### 5. Single Write Buffer
 Build entire frame in memory, single `write()` syscall. Better than multiple small writes.
 
+## Preventing Flicker
+
+### The Flicker Problem
+
+Flickering occurs when:
+1. Screen is cleared
+2. Content is redrawn
+3. Delay between clear and redraw creates visible blank frames
+
+This is especially noticeable in long conversations or over slow connections.
+
+### Solution: Never Clear
+
+**Append-only mode** (recommended for v1):
+- New content just flows to bottom
+- Never redraw old content
+- Old content scrolls off naturally
+- **Zero flicker** (nothing is redrawn)
+
+```zig
+// Just append, never clear
+fn displayChunk(chunk: []const u8) !void {
+    try stdout.writeAll(chunk);
+}
+```
+
+### Differential Updates
+
+If you must update existing content:
+- Track what changed
+- Only rewrite changed lines
+- Use cursor positioning, not clear screen
+
+```zig
+// Update specific line without clearing
+fn updateLine(row: usize, content: []const u8) !void {
+    try stdout.print("\x1B[{d};0H", .{row});  // Move to row
+    try stdout.writeAll("\x1B[2K");            // Clear line
+    try stdout.writeAll(content);              // Write new content
+}
+```
+
+### Double Buffering
+
+Accumulate entire frame, write once:
+
+```zig
+var buffer = std.ArrayList(u8).init(allocator);
+// Build entire frame in buffer
+try buffer.appendSlice(...);
+// Single write
+try stdout.writeAll(buffer.items);
+```
+
+### Hide Cursor During Updates
+
+```zig
+try stdout.writeAll("\x1B[?25l");  // Hide
+// ... do updates ...
+try stdout.writeAll("\x1B[?25h");  // Show
+```
+
+### Alternate Screen Buffer
+
+For full-screen apps (like vim):
+
+```zig
+// Enter alternate screen
+try stdout.writeAll("\x1B[?1049h");
+// ... render ...
+// Exit (restores original content)
+try stdout.writeAll("\x1B[?1049l");
+```
+
+**Trade-off**: Can't scroll back, but no flicker.
+
 ## Display Patterns
 
 ### For Streaming Text (Primary Use Case)
 
 **Challenge**: Display Claude's response as it streams, handling word wrap and colors.
 
-**Strategy**:
-- Line buffering: Accumulate until newline or terminal width
-- Flush complete lines immediately (progressive display)
-- Keep buffer small (single line = ~200 bytes)
+**Strategy for long conversations**:
+- **Append-only mode**: Never redraw, just stream to bottom
+- Optional status line (updated independently with cursor save/restore)
+- No clearing = no flickering
+- Works great for scrolling conversations
 
 **Memory**: <1KB for streaming buffer
 
