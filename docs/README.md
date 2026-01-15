@@ -22,6 +22,7 @@ docs/
 ├── REFERENCES.md                 # External resources and references
 └── concepts/                     # Core design concepts
     ├── architecture.md           # Overall system architecture and philosophy
+    ├── concurrency-model.md     # Interactive I/O and event loop
     ├── planning-system.md       # Task tracking and TodoWrite tool
     ├── memory-management.md      # Memory allocation and subagent budgets
     ├── conversation-state.md    # Message tracking and serialization
@@ -49,6 +50,7 @@ When building specific subsystems:
 
 #### Core Agent Architecture
 - [architecture.md](concepts/architecture.md) - Core loop and philosophy
+- [concurrency-model.md](concepts/concurrency-model.md) - Interactive I/O with libxev
 - [planning-system.md](concepts/planning-system.md) - Task tracking
 - [conversation-state.md](concepts/conversation-state.md) - Message management
 - [memory-management.md](concepts/memory-management.md) - Subagent strategies
@@ -88,7 +90,17 @@ Describes the overall system design, component relationships, and data flow. Sta
 - Core agent loop pattern (shared by all coding agents)
 - System components and interaction patterns
 - Subagent architecture for context isolation (v2+)
-- Memory implications of multi-agent execution
+- Concurrency model (libxev event loop for interactive I/O)
+
+### [concurrency-model.md](concepts/concurrency-model.md)
+Explains how to handle interactive features: typing while output streams.
+
+**Key topics**:
+- Concurrent I/O requirements (stdin + socket + terminal)
+- Event loop (libxev) vs multi-threading vs poll()
+- Why libxev wins on constrained devices (efficient, ~100KB overhead)
+- Interactive features: Ctrl+C cancellation, progress updates
+- Performance on single-core ARM (event loop beats threads 5-10x)
 
 ### [planning-system.md](concepts/planning-system.md)
 Covers explicit task tracking to prevent "context fade" during multi-step tasks.

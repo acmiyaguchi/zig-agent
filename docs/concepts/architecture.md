@@ -48,7 +48,7 @@ That's it. The model calls tools until it decides the task is complete. Everythi
 ## System Components
 
 ### Core Agent
-- Main event loop and request orchestrator
+- Main event loop and request orchestrator (libxev for concurrent I/O)
 - Conversation state management
 - Tool dispatch system
 - Planning system (TodoWrite tool for multi-step tasks)
@@ -194,6 +194,45 @@ fn spawnSubagent(task: SubagentTask, allocator: Allocator) ![]const u8 {
 ```
 
 See [memory-management.md](memory-management.md) for arena allocator reuse strategy.
+
+## Concurrency Model
+
+The agent requires concurrent I/O for interactive features:
+- **User input**: Read from stdin (typing, Ctrl+C)
+- **API streaming**: Read from network socket
+- **Terminal output**: Render while streaming
+
+**Implementation**: Event loop (libxev) for single-threaded concurrent I/O.
+
+### Why libxev?
+
+**Requirements**:
+- User can type while agent streams output
+- Ctrl+C cancels current operation
+- Progress indicators update in real-time
+
+**Options considered**:
+1. **libxev (event loop)** ← Chosen
+   - Single-threaded, efficient on ARM
+   - Zero runtime allocations
+   - +100KB binary size
+2. **Multi-threading**: Too heavy (3-6MB for thread stacks)
+3. **poll() syscall**: Manual but viable alternative
+
+**Trade-off**: libxev adds callback complexity but provides production-ready concurrent I/O for interactive features.
+
+### Event Loop Pattern
+
+```zig
+loop.read(stdin, onUserInput);      // Handle typing
+loop.read(api_socket, onAPIChunk);  // Handle streaming
+loop.timer(100ms, onProgressUpdate); // Update spinner
+loop.run();                          // Process events
+```
+
+When stdin or socket has data, corresponding callback fires. No blocking, terminal stays responsive.
+
+See [concurrency-model.md](concurrency-model.md) for detailed analysis and alternatives.
 
 ## Data Flow
 

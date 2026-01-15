@@ -32,13 +32,14 @@ Efficient memory management is critical for running on constrained devices. Zig'
 Target memory usage on Nokia N900 (256MB RAM):
 
 - Base runtime: ~5MB
+- libxev event loop: ~100KB
 - API client buffers: ~2MB
 - Streaming parser: ~1MB
 - Tool execution: ~10MB
 - Conversation state: ~5MB per turn
 - User interface: ~2MB
 
-**Total target**: <50MB peak usage
+**Total target**: <50MB peak usage (libxev adds negligible ~100KB)
 
 ## Subagent Memory Budget
 
