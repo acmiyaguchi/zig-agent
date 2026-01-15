@@ -31,7 +31,8 @@ docs/
     ├── tool-execution.md        # Tool system design
     ├── file-operations.md       # File I/O implementation
     ├── performance-constraints.md # Target metrics and optimization
-    └── terminal-ui.md           # Terminal interface and rendering
+    ├── terminal-ui.md           # Terminal interface and rendering
+    └── testing-debugging.md     # Memory profiling, debugging, validation
 ```
 
 ## Reading Guide
@@ -77,6 +78,16 @@ Focus on these documents:
 1. **[performance-constraints.md](concepts/performance-constraints.md)** - Metrics and targets
 2. **[memory-management.md](concepts/memory-management.md)** - Allocation optimization
 3. **[REFERENCES.md](REFERENCES.md#testing-and-benchmarking)** - Profiling tools
+
+### For Testing and Validation
+
+Verify assumptions on real hardware:
+
+1. **[testing-debugging.md](concepts/testing-debugging.md)** - Memory profiling, debugging strategies
+2. **[memory-management.md](concepts/memory-management.md)** - Memory budgets to validate
+3. **[performance-constraints.md](concepts/performance-constraints.md)** - Performance targets
+
+**Critical**: Test on actual N900 hardware to validate all memory and performance assumptions.
 
 ## Concept Documents
 
@@ -178,6 +189,19 @@ Evaluates terminal UI approaches and rendering efficiency strategies.
 - Efficient rendering (buffering, differential updates, rate limiting)
 - Display patterns (streaming text, progress indicators, status bars)
 - Progressive implementation (raw ANSI → termbox2 → termbox2+Clay)
+
+### [testing-debugging.md](concepts/testing-debugging.md)
+Comprehensive guide to validating memory usage, debugging, and profiling on constrained devices.
+
+**Key topics**:
+- Zig's built-in memory leak detection (GeneralPurposeAllocator)
+- RSS monitoring (`/proc/self/statm`, continuous tracking)
+- External profiling tools (Valgrind, Massif, heaptrack, perf)
+- Debugging strategies (GDB remote debugging, printf, logging)
+- Testing on QEMU (emulated ARM) and real N900 hardware
+- Performance benchmarking and acceptance criteria
+
+**Critical**: Test early on real hardware to validate all assumptions!
 
 ## References
 
