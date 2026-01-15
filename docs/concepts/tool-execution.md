@@ -56,6 +56,149 @@ For long-running tools:
 - Timeout per tool: 30 seconds (configurable)
 - Max output size: 1MB (truncate if exceeded)
 
+## ACP-Inspired Tool Patterns
+
+**Inspired by**: [Agent Client Protocol (ACP)](../concepts/acp-patterns.md)
+
+These design patterns from ACP improve tool safety, clarity, and reliability:
+
+### Absolute Paths Only
+
+**All file paths must be absolute.** No relative paths allowed.
+
+```zig
+fn normalizePath(allocator: Allocator, user_path: []const u8) ![]const u8 {
+    if (std.fs.path.isAbsolute(user_path)) {
+        return try allocator.dupe(u8, user_path);
+    }
+
+    // Convert relative to absolute immediately
+    const cwd = try std.process.getCwd(allocator);
+    defer allocator.free(cwd);
+
+    return try std.fs.path.resolve(allocator, &.{cwd, user_path});
+}
+
+fn validateToolPath(path: []const u8) !void {
+    if (!std.fs.path.isAbsolute(path)) {
+        return error.RelativePathNotAllowed;
+    }
+
+    if (!std.mem.startsWith(u8, path, workspace_root)) {
+        return error.PathOutsideWorkspace;
+    }
+}
+```
+
+**Benefits**: Eliminates CWD ambiguity, easier security validation, clearer debugging.
+
+See: [acp-patterns.md](acp-patterns.md#pattern-2-absolute-paths-only)
+
+### 1-Based Line Numbers
+
+**All line numbers are 1-based** to match editor conventions.
+
+```zig
+const LineRange = struct {
+    /// Line numbers are 1-based (matching editor display)
+    start: usize,  // 1 = first line
+    end: usize,    // inclusive
+
+    fn toZeroBased(self: LineRange) struct { start: usize, end: usize } {
+        return .{
+            .start = self.start - 1,
+            .end = self.end - 1,
+        };
+    }
+};
+```
+
+**Convention**: Use 1-based in all user-facing output and APIs. Convert to 0-based only when indexing arrays.
+
+**Benefits**: Error messages match editor line numbers, no mental offset needed.
+
+See: [acp-patterns.md](acp-patterns.md#pattern-3-1-based-line-numbers)
+
+### Permission Requests
+
+**Always request permission for potentially dangerous operations.**
+
+```zig
+const PermissionResponse = enum {
+    allow_once,     // Allow this single execution
+    allow_always,   // Allow all future executions
+    deny,           // Reject this execution
+};
+
+fn executeBash(cmd: []const u8) !ToolResult {
+    const approved = try requestPermission(.{
+        .tool_name = "bash",
+        .args = .{ .string = cmd },
+        .reason = if (isDangerousCommand(cmd))
+            "⚠️  POTENTIALLY DANGEROUS COMMAND"
+        else
+            null,
+    });
+
+    if (approved == .deny) {
+        return ToolResult{
+            .success = false,
+            .output = "",
+            .error_message = "Permission denied by user",
+        };
+    }
+
+    return try runCommand(cmd);
+}
+```
+
+**Dangerous patterns** to detect:
+- `rm -rf /`
+- `dd if=`
+- `mkfs`
+- `curl | bash`
+- `--force` flags
+- SQL `DROP` statements
+
+See: [acp-patterns.md](acp-patterns.md#pattern-6-permission-request-pattern)
+
+### Tool Capabilities
+
+**Explicitly declare what each tool can do.**
+
+```zig
+const AgentCapabilities = struct {
+    can_read_files: bool = true,
+    can_write_files: bool = true,
+    can_execute_shell: bool = true,
+    max_file_size: usize = 10 * 1024 * 1024,  // 10MB
+    max_shell_timeout: u64 = 300_000,          // 5 min
+};
+
+fn getToolsForCapabilities(caps: AgentCapabilities) []const Tool {
+    var tools = std.ArrayList(Tool).init(allocator);
+
+    if (caps.can_read_files) {
+        try tools.append(ReadFileTool);
+        try tools.append(GlobTool);
+    }
+
+    if (caps.can_write_files) {
+        try tools.append(WriteFileTool);
+    }
+
+    if (caps.can_execute_shell) {
+        try tools.append(BashTool);
+    }
+
+    return tools.toOwnedSlice();
+}
+```
+
+**Use case**: Restrict explore subagents to read-only operations.
+
+See: [acp-patterns.md](acp-patterns.md#pattern-4-capabilities-negotiation)
+
 ## Tool Implementation
 
 ### File Reading

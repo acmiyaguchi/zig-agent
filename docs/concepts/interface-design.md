@@ -80,6 +80,62 @@ The agent emits events to notify the UI of state changes:
 | `turn_complete` | Conversation turn finished | Success flag, token count |
 | `error` | Something went wrong | Error message, severity |
 
+### Streaming Update Pattern
+
+**Inspired by**: [Agent Client Protocol (ACP)](../concepts/acp-patterns.md#pattern-1-streaming-update-enumeration--most-valuable)
+
+For cleaner UI rendering, we separate different types of streaming content using a tagged union:
+
+```zig
+const AgentUpdate = union(enum) {
+    /// Model reasoning (internal thoughts)
+    thought: []const u8,
+
+    /// Message chunk streaming to user
+    message_chunk: []const u8,
+
+    /// Tool about to execute
+    tool_call: struct {
+        name: []const u8,
+        args: std.json.Value,
+    },
+
+    /// Tool execution completed
+    tool_result: struct {
+        name: []const u8,
+        success: bool,
+        output: []const u8,
+        duration_ms: u64,
+    },
+
+    /// Turn complete
+    completion: enum {
+        stop,           // Natural completion
+        max_tokens,     // Hit token limit
+        tool_use,       // Waiting for tool execution
+        error,          // Error occurred
+    },
+};
+```
+
+**Benefits**:
+- **Type safety**: Can't mix up thought vs message content
+- **Clear rendering**: Pattern match on update type for appropriate display
+- **Extensible**: Easy to add new update types (e.g., `plan_updated`)
+
+**UI rendering example**:
+```zig
+switch (update) {
+    .thought => |text| renderDimmed(text),
+    .message_chunk => |text| renderNormal(text),
+    .tool_call => |call| showSpinner(call.name),
+    .tool_result => |result| showCheckmark(result.name, result.success),
+    .completion => |reason| showDivider(reason),
+}
+```
+
+See [acp-patterns.md](acp-patterns.md#pattern-1-streaming-update-enumeration--most-valuable) for detailed design rationale.
+
 ### Command Interface
 
 The UI sends commands to the agent:

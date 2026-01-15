@@ -22,6 +22,7 @@ docs/
 ├── REFERENCES.md                 # External resources and references
 └── concepts/                     # Core design concepts
     ├── architecture.md           # Overall system architecture and philosophy
+    ├── acp-patterns.md          # Design patterns from Agent Client Protocol
     ├── interface-design.md      # Clean separation: Core, UI, Tools, API
     ├── concurrency-model.md     # Interactive I/O and event loop
     ├── planning-system.md       # Task tracking and TodoWrite tool
@@ -43,8 +44,9 @@ docs/
 Start here to understand the project:
 
 1. **[architecture.md](concepts/architecture.md)** - System overview and components
-2. **[performance-constraints.md](concepts/performance-constraints.md)** - Why this project exists
-3. **[REFERENCES.md](REFERENCES.md)** - Related projects and libraries
+2. **[acp-patterns.md](concepts/acp-patterns.md)** - Proven design patterns we adopt
+3. **[performance-constraints.md](concepts/performance-constraints.md)** - Why this project exists
+4. **[REFERENCES.md](REFERENCES.md)** - Related projects and libraries
 
 ### For Implementation
 
@@ -52,6 +54,8 @@ When building specific subsystems:
 
 #### Core Agent Architecture
 - [architecture.md](concepts/architecture.md) - Core loop and philosophy
+- [acp-patterns.md](concepts/acp-patterns.md) - Streaming updates, session lifecycle, capabilities
+- [interface-design.md](concepts/interface-design.md) - Event-driven architecture
 - [concurrency-model.md](concepts/concurrency-model.md) - Interactive I/O with libxev
 - [planning-system.md](concepts/planning-system.md) - Task tracking
 - [conversation-state.md](concepts/conversation-state.md) - Message management
@@ -64,6 +68,7 @@ When building specific subsystems:
 
 #### Tool System
 - [tool-execution.md](concepts/tool-execution.md) - Tool dispatch and execution
+- [acp-patterns.md](concepts/acp-patterns.md) - Permission model, absolute paths, capabilities
 - [file-operations.md](concepts/file-operations.md) - File I/O patterns
 - [REFERENCES.md](REFERENCES.md#zig-libraries-and-patterns) - Zig libraries
 
@@ -103,6 +108,21 @@ Describes the overall system design, component relationships, and data flow. Sta
 - System components and interaction patterns
 - Subagent architecture for context isolation (v2+)
 - Concurrency model (libxev event loop for interactive I/O)
+
+### [acp-patterns.md](concepts/acp-patterns.md)
+Design patterns adopted from the Agent Client Protocol that improve safety, clarity, and user experience.
+
+**Key topics**:
+- Why we adopt ACP patterns but not the full protocol
+- Streaming update enumeration (thought/message/tool separation)
+- Absolute paths only (eliminates CWD bugs)
+- 1-based line numbers (matches editor conventions)
+- Capabilities negotiation (restrict subagent tools)
+- Permission request pattern (user control over dangerous ops)
+- Session lifecycle state machine
+- Meta extension convention for debugging data
+
+**Cross-references**: These patterns appear in [interface-design.md](concepts/interface-design.md), [tool-execution.md](concepts/tool-execution.md), and throughout the codebase.
 
 ### [interface-design.md](concepts/interface-design.md)
 Defines clean boundaries between core agent logic, UI rendering, tools, and API client.
@@ -255,6 +275,48 @@ State machines, memory management patterns, security practices
 1. Test on target hardware (ARM emulation or real device)
 2. Profile memory usage and performance
 3. Validate against targets in performance-constraints.md
+
+## Documentation as Knowledge Base
+
+Our documentation is highly interconnected - each document cross-references related concepts:
+
+### Key Document Relationships
+
+```
+architecture.md (hub)
+  ├─→ acp-patterns.md (design patterns)
+  ├─→ interface-design.md (event system)
+  │    └─→ acp-patterns.md (streaming updates)
+  ├─→ concurrency-model.md (libxev)
+  ├─→ planning-system.md (TodoWrite)
+  ├─→ memory-management.md (subagents)
+  └─→ tool-execution.md (tools)
+       └─→ acp-patterns.md (permissions, capabilities)
+            └─→ file-operations.md (path safety)
+
+performance-constraints.md
+  ├─→ memory-management.md (budgets)
+  ├─→ testing-debugging.md (validation)
+  └─→ concurrency-model.md (event loop efficiency)
+
+REFERENCES.md
+  └─→ All docs (external resources)
+```
+
+### Navigation Tips
+
+1. **Follow cross-references**: Links like `[acp-patterns.md](acp-patterns.md#pattern-1)` jump to specific sections
+2. **Check "Related" sections**: Most docs end with related document links
+3. **Use this README**: The reading guide groups docs by topic
+4. **Start at architecture.md**: The central hub for understanding the system
+
+### Keeping Documentation Current
+
+When updating code:
+- Update relevant concept documents
+- Add cross-references to related docs
+- Update this README if adding new documents
+- Check that examples still match implementation
 
 ## Future Documentation
 

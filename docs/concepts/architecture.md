@@ -45,6 +45,8 @@ That's it. The model calls tools until it decides the task is complete. Everythi
 4. **Static Linking**: Single binary deployment with no runtime dependencies
 5. **Cross-Architecture Support**: ARM (armv7l, aarch64) and x86_64
 
+**Design patterns**: We adopt proven patterns from the [Agent Client Protocol](acp-patterns.md) (streaming updates, absolute paths, permission model, capabilities) without the JSON-RPC overhead. See [acp-patterns.md](acp-patterns.md) for rationale.
+
 ## System Components
 
 ### Core Agent
@@ -122,6 +124,8 @@ Each subagent has:
 | explore | bash, read_file | Read-only codebase exploration |
 | code | all tools | Full implementation power |
 | plan | bash, read_file | Design without modifying |
+
+**Implementation note**: Tool filtering uses capability-based negotiation. Each agent type has different capabilities (read-only vs full access). See [acp-patterns.md](acp-patterns.md#pattern-4-capabilities-negotiation) for the capability system design.
 
 ### Memory Implications for N900
 
