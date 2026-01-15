@@ -1,0 +1,6 @@
+[submodule "vendor/learn-claude-code"]
+	path = vendor/learn-claude-code
+	url = https://github.com/shareAI-lab/learn-claude-code.git
+[submodule "vendor/opencode"]
+	path = vendor/opencode
+	url = https://github.com/opencode-ai/opencode.git

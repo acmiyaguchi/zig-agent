@@ -30,6 +30,21 @@ This document contains references to other projects, libraries, and resources th
 - **Relevant patterns**: Code search, embeddings
 - **What to learn**: Fast code navigation, caching strategies
 
+### Building Claude Code from Scratch (learn-claude-code)
+- **Blog**: https://medium.com/@yashv6655/building-claude-code-from-scratch-a-simple-journey-into-ai-agents-2ca43eccad6e
+- **Repo**: https://github.com/shareAI-lab/learn-claude-code
+- **Language**: Python
+- **Relevant patterns**: Progressive implementation (v0→v4), minimal agent loop, tool execution
+- **What to learn**:
+  - **Core agent loop**: Simple while loop with tool execution feedback
+  - **Progressive complexity**: 50 → 200 → 300 → 450 → 550 lines across 5 versions
+  - **Tool patterns**: Bash, Read, Write, Edit as foundational tools
+  - **Task decomposition**: TodoManager for explicit planning
+  - **Sub-agents**: Spawning isolated child agents with clean context
+  - **Skills system**: Domain knowledge loaded on-demand via SKILL.md files
+  - **Philosophy**: "The model is 80%. Code is 20%" - simplicity over complexity
+- **What to avoid**: Over-engineering the framework (let the model do the work)
+
 ## Zig Libraries and Patterns
 
 ### HTTP Client
