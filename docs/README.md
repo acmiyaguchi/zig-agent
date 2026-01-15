@@ -22,6 +22,7 @@ docs/
 ├── REFERENCES.md                 # External resources and references
 └── concepts/                     # Core design concepts
     ├── architecture.md           # Overall system architecture and philosophy
+    ├── interface-design.md      # Clean separation: Core, UI, Tools, API
     ├── concurrency-model.md     # Interactive I/O and event loop
     ├── planning-system.md       # Task tracking and TodoWrite tool
     ├── memory-management.md      # Memory allocation and subagent budgets
@@ -102,6 +103,17 @@ Describes the overall system design, component relationships, and data flow. Sta
 - System components and interaction patterns
 - Subagent architecture for context isolation (v2+)
 - Concurrency model (libxev event loop for interactive I/O)
+
+### [interface-design.md](concepts/interface-design.md)
+Defines clean boundaries between core agent logic, UI rendering, tools, and API client.
+
+**Key topics**:
+- Event-driven architecture (agent emits events, UI handles them)
+- Three core interfaces: AgentInterface, ToolInterface, APIClientInterface
+- Project structure and module organization
+- Dependency flow (downward only, no cycles)
+- Testing strategy (test components independently)
+- UI implementations (Terminal, HTTP API, future GUI)
 
 ### [concurrency-model.md](concepts/concurrency-model.md)
 Explains how to handle interactive features: typing while output streams.
