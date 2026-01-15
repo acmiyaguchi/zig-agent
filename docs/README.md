@@ -21,8 +21,9 @@ docs/
 ├── README.md (this file)         # Project overview and documentation guide
 ├── REFERENCES.md                 # External resources and references
 └── concepts/                     # Core design concepts
-    ├── architecture.md           # Overall system architecture
-    ├── memory-management.md      # Memory allocation strategies
+    ├── architecture.md           # Overall system architecture and philosophy
+    ├── planning-system.md       # Task tracking and TodoWrite tool
+    ├── memory-management.md      # Memory allocation and subagent budgets
     ├── conversation-state.md    # Message tracking and serialization
     ├── api-client.md            # Claude API communication
     ├── streaming.md             # SSE response handling
@@ -45,6 +46,12 @@ Start here to understand the project:
 ### For Implementation
 
 When building specific subsystems:
+
+#### Core Agent Architecture
+- [architecture.md](concepts/architecture.md) - Core loop and philosophy
+- [planning-system.md](concepts/planning-system.md) - Task tracking
+- [conversation-state.md](concepts/conversation-state.md) - Message management
+- [memory-management.md](concepts/memory-management.md) - Subagent strategies
 
 #### API Communication
 - [api-client.md](concepts/api-client.md) - HTTP client design
@@ -77,17 +84,30 @@ Each concept document covers a major subsystem of the agent:
 Describes the overall system design, component relationships, and data flow. Start here for the big picture.
 
 **Key topics**:
-- System components
-- Design goals (memory, startup time, efficiency)
-- Component interaction patterns
+- Philosophy: "The model is 80%. Code is 20%."
+- Core agent loop pattern (shared by all coding agents)
+- System components and interaction patterns
+- Subagent architecture for context isolation (v2+)
+- Memory implications of multi-agent execution
+
+### [planning-system.md](concepts/planning-system.md)
+Covers explicit task tracking to prevent "context fade" during multi-step tasks.
+
+**Key topics**:
+- TodoWrite tool design and constraints
+- Structured planning for complex tasks
+- Memory overhead (~3.5KB, negligible)
+- Usage patterns and integration strategies
 
 ### [memory-management.md](concepts/memory-management.md)
 Details the memory allocation strategy critical for running on devices with only 256MB RAM.
 
 **Key topics**:
 - Allocator hierarchy (GPA, Arena, Fixed Buffer)
-- Memory budgets and limits
-- Optimization techniques (zero-copy, pooling)
+- Memory budgets per component
+- Subagent memory budgets (22MB per agent, strategies for constrained devices)
+- Sequential vs parallel subagent execution strategies
+- Optimization techniques (zero-copy, pooling, arena reuse)
 
 ### [conversation-state.md](concepts/conversation-state.md)
 Covers efficient data structures for tracking conversation history and minimizing JSON serialization overhead.
