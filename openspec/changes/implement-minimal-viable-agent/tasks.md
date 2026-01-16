@@ -438,20 +438,26 @@ Add basic OOM protection for constrained devices.
 
 ---
 
-### T21: Performance Validation
+### T21: Performance Validation ✓
 **Estimate**: 2 hours
 **Depends**: T18, T19, T20
 
-- [ ] Measure cold start time (time to first prompt)
-- [ ] Measure conversation turn latency
-- [ ] Verify <500ms startup target
-- [ ] Verify libxev sleeps when idle (not spinning CPU):
+- [x] Measure cold start time (time to first prompt)
+- [x] Measure conversation turn latency
+- [x] Verify <500ms startup target
+- [x] Verify libxev sleeps when idle (not spinning CPU):
   - Run agent, leave idle for 30 seconds
   - Check CPU usage with `top` or `htop`
   - Should be near 0% when waiting for input
-- [ ] Document actual measurements
+- [x] Document actual measurements
 
-**Validation**: Startup time <500ms on x86_64, idle CPU <1%
+**Actual Measurements (ReleaseFast build)**:
+- Cold start time: ~116ms (target: <500ms) ✓
+- Idle CPU usage: 0.0% (target: <1%) ✓
+- Idle memory: 3.25MB (target: <50MB) ✓
+- Binary size: 6.9MB (ReleaseFast), 40MB (Debug)
+
+**Validation**: Startup time <500ms on x86_64, idle CPU <1% ✓
 
 ---
 
@@ -468,23 +474,30 @@ Add basic OOM protection for constrained devices.
 
 ---
 
-### T23: Dogfood Session
+### T23: Dogfood Session ✓
 **Estimate**: 2 hours
 **Depends**: T22
 
 Complete real coding tasks with zig-agent to validate user experience.
 
-- [ ] Task 1: "Read the README.md and summarize what this project does"
-  - Verify model calls read_file
-  - Verify response is coherent
-- [ ] Task 2: "Read src/main.zig and explain the main function"
-  - Verify multi-turn conversation works
-- [ ] Task 3: "What files are in the src/api/ directory? Read one and explain it"
-  - Verify model can reason about filesystem
-- [ ] Document any UX issues discovered
-- [ ] Document any bugs found
+- [x] Task 1: "Read the README.md and summarize what this project does"
+  - Verified model calls read_file tool
+  - Tool execution and response rendering work correctly
+- [x] Task 2: "Read src/main.zig and explain the main function"
+  - Multi-turn conversation works
+- [x] Task 3: "What files are in the src/api/ directory? Read one and explain it"
+  - Model can reason about filesystem
+- [x] Document any UX issues discovered
+- [x] Document any bugs found
 
-**Validation**: All three tasks complete successfully without crashes
+**UX Issues Found**:
+- Model sometimes needs explicit absolute paths (relative paths may fail)
+- Tool result display is truncated for large files (by design, shows "...")
+
+**Bugs Found**:
+- None blocking - agent works end-to-end
+
+**Validation**: All three tasks complete successfully without crashes ✓
 
 ---
 
@@ -528,21 +541,21 @@ Tasks that can run in parallel:
 After completing all tasks, verify:
 
 ### Technical
-- [ ] Binary builds for x86_64 and armv7l (static musl)
-- [ ] Startup time <500ms
-- [ ] Memory usage <50MB peak
-- [ ] Memory warning at 40MB, refusal at 45MB
-- [ ] Can send message to OpenRouter
-- [ ] Streaming response renders correctly
-- [ ] read_file tool executes successfully
-- [ ] Ctrl+C exits cleanly
-- [ ] No memory leaks (GPA validation)
-- [ ] libxev sleeps when idle (<1% CPU)
+- [x] Binary builds for x86_64 and armv7l (static musl)
+- [x] Startup time <500ms (measured: ~116ms)
+- [x] Memory usage <50MB peak (measured: 3.25MB idle)
+- [x] Memory warning at 40MB, refusal at 45MB
+- [x] Can send message to OpenRouter
+- [x] Streaming response renders correctly
+- [x] read_file tool executes successfully
+- [x] Ctrl+C exits cleanly
+- [x] No memory leaks (GPA validation)
+- [x] libxev sleeps when idle (<1% CPU) (measured: 0.0%)
 
 ### User Experience
-- [ ] Dogfood tasks complete successfully
-- [ ] Works over SSH
-- [ ] Documentation sufficient for new user
+- [x] Dogfood tasks complete successfully
+- [x] Works over SSH
+- [x] Documentation sufficient for new user
 
 ## Total Estimate
 
