@@ -4,3 +4,9 @@
 [submodule "vendor/opencode"]
 	path = vendor/opencode
 	url = https://github.com/opencode-ai/opencode.git
+[submodule "vendor/termbox2"]
+	path = vendor/termbox2
+	url = https://github.com/termbox/termbox2
+[submodule "vendor/libxev"]
+	path = vendor/libxev
+	url = https://github.com/mitchellh/libxev
