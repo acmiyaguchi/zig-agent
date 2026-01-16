@@ -79,12 +79,7 @@ pub fn build(b: *std.Build) void {
 
     // --- Standalone Tests ---
     const standalone_tests = [_][]const u8{
-        "test_any_writer.zig",
-        "test_arraylist.zig",
-        "test_json_fix.zig",
-        "test_json_fmt.zig",
-        "test_managed.zig",
-        "test_managed_2.zig",
+        "test_std.zig",
     };
 
     for (standalone_tests) |test_file| {
@@ -99,34 +94,4 @@ pub fn build(b: *std.Build) void {
         const run_t = b.addRunArtifact(t);
         test_step.dependOn(&run_t.step);
     }
-
-    // --- Termbox Module ---
-    const termbox_mod = b.createModule(.{
-        .root_source_file = b.path("src/ui/termbox.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // --- Termbox Test ---
-    const test_termbox_root_mod = b.createModule(.{
-        .root_source_file = b.path("tests/test_termbox.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    test_termbox_root_mod.addImport("termbox", termbox_mod);
-
-    const test_termbox_exe = b.addExecutable(.{
-        .name = "test-termbox",
-        .root_module = test_termbox_root_mod,
-    });
-    test_termbox_exe.addCSourceFile(.{
-        .file = b.path("src/ui/termbox_impl.c"),
-        .flags = &.{ "-std=c99", "-D_XOPEN_SOURCE", "-D_DEFAULT_SOURCE" },
-    });
-    test_termbox_exe.addIncludePath(b.path("vendor/termbox2"));
-    test_termbox_exe.linkLibC();
-
-    const run_test_termbox = b.addRunArtifact(test_termbox_exe);
-    const test_termbox_step = b.step("test-termbox", "Run termbox test");
-    test_termbox_step.dependOn(&run_test_termbox.step);
 }
