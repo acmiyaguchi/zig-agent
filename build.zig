@@ -97,4 +97,22 @@ pub fn build(b: *std.Build) void {
         test_exe.linkLibC();
         b.installArtifact(test_exe);
     }
+
+    // --- Manual Test UI (requires termbox2) ---
+    const ui_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/manual_test_ui.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const ui_test_exe = b.addExecutable(.{
+        .name = "manual_test_ui",
+        .root_module = ui_test_mod,
+    });
+    ui_test_exe.addCSourceFile(.{
+        .file = b.path("src/ui/termbox_impl.c"),
+        .flags = &.{ "-std=c99", "-D_XOPEN_SOURCE", "-D_DEFAULT_SOURCE" },
+    });
+    ui_test_exe.addIncludePath(b.path("vendor/termbox2"));
+    ui_test_exe.linkLibC();
+    b.installArtifact(ui_test_exe);
 }
