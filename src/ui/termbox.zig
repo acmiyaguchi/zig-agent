@@ -37,6 +37,8 @@ extern "c" fn tb_clear() c_int;
 extern "c" fn tb_present() c_int;
 extern "c" fn tb_poll_event(ev: *TbEvent) c_int;
 extern "c" fn tb_set_cell(x: c_int, y: c_int, ch: u32, fg: u64, bg: u64) c_int;
+extern "c" fn tb_get_fds(ttyfd: *c_int, resizefd: *c_int) c_int;
+extern "c" fn tb_peek_event(ev: *TbEvent, timeout_ms: c_int) c_int;
 
 pub fn init() !void {
     const ret = tb_init();
@@ -68,6 +70,24 @@ pub fn present() !void {
 pub fn pollEvent(ev: *TbEvent) !void {
     const ret = tb_poll_event(ev);
     if (ret < 0) return error.PollEventFailed;
+}
+
+/// Get termbox file descriptors for external event loops
+/// Returns tuple of (tty_fd, resize_fd)
+pub fn getFds() ![2]std.posix.fd_t {
+    var ttyfd: c_int = undefined;
+    var resizefd: c_int = undefined;
+    const ret = tb_get_fds(&ttyfd, &resizefd);
+    if (ret != 0) return error.GetFdsFailed;
+    return .{ @intCast(ttyfd), @intCast(resizefd) };
+}
+
+/// Non-blocking event peek with timeout
+/// Returns true if event was available, false on timeout
+pub fn peekEvent(ev: *TbEvent, timeout_ms: c_int) !bool {
+    const ret = tb_peek_event(ev, timeout_ms);
+    if (ret < 0) return error.PeekEventFailed;
+    return ret == 0; // 0 = TB_OK = event available
 }
 
 pub fn setCell(x: c_int, y: c_int, ch: u32, fg: u64, bg: u64) !void {

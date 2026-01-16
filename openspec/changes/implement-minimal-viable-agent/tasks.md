@@ -334,32 +334,32 @@ Add basic OOM protection for constrained devices.
 
 ---
 
-### T15: Integrate libxev Event Loop
+### T15: Integrate libxev Event Loop ✓
 **Estimate**: 4 hours
 **Depends**: T3, T14
 **Risk**: High (complex integration)
 
-- [ ] Add xev.Loop to `TerminalUI`
-- [ ] Set up stdin watcher:
-  - Read user input
+- [x] Add xev.Loop to main.zig (via InteractiveMode struct)
+- [x] Set up stdin watcher:
+  - Read user input via termbox TTY fd polling
   - On Enter: call agent.executeTurn()
   - On Ctrl+C: exit loop
-- [ ] Set up signal handler for graceful shutdown
-- [ ] Ensure termbox2 rendering doesn't block event loop
-- [ ] Manual test: Type input, see it processed by agent
+- [x] Set up signal handler for graceful shutdown (via termbox Ctrl+C key event)
+- [x] Ensure termbox2 rendering doesn't block event loop
+- [x] Manual test: Type input, see it processed by agent
 
 **Validation**: Can type input and trigger agent turns via libxev
 
 ---
 
-### T16: Wire Agent Events to UI
+### T16: Wire Agent Events to UI ✓
 **Estimate**: 2 hours
 **Depends**: T13, T14
 
-- [ ] Pass TerminalUI.handleAgentUpdate as event_handler to Agent
-- [ ] Ensure updates render in real-time during streaming
-- [ ] Test with real OpenRouter API call
-- [ ] Verify no flicker or blocking
+- [x] Pass TerminalUI.handleAgentUpdate as event_handler to Agent
+- [x] Ensure updates render in real-time during streaming
+- [x] Test with real OpenRouter API call
+- [x] Verify no flicker or blocking
 
 **Validation**: Streaming API response renders smoothly in terminal
 

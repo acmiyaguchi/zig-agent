@@ -1,4 +1,4 @@
-// Entry point - Headless REPL mode
+// Entry point - Event-driven REPL mode with libxev
 const std = @import("std");
 const api_types = @import("api/types.zig");
 const agent_types = @import("agent/types.zig");
@@ -6,26 +6,136 @@ const client = @import("api/client.zig");
 const registry = @import("tools/registry.zig");
 const read_file = @import("tools/read_file.zig");
 const agent_lib = @import("agent/agent.zig");
+const xev = @import("xev");
+const TerminalUI = @import("ui/terminal.zig").TerminalUI;
+const tb = @import("ui/termbox.zig");
 
-fn eventHandler(update: agent_types.AgentUpdate, context: *anyopaque) void {
-    _ = context;
-    switch (update) {
-        .thought => |t| std.debug.print("{s}\n", .{t}),
-        .message_chunk => |c| std.debug.print("{s}", .{c}),
-        .tool_call => |tc| std.debug.print("\n[Tool: {s}]\n", .{tc.name}),
-        .tool_result => |tr| {
-            const output = tr.output;
-            if (output.len > 100) {
-                std.debug.print("[Result: {s}...]\n", .{output[0..100]});
-            } else {
-                std.debug.print("[Result: {s}]\n", .{output});
-            }
-        },
-        .completion => std.debug.print("\n", .{}),
-        .@"error" => |e| std.debug.print("Error: {s}\n", .{e}),
-        .memory_warning => std.debug.print("Warning: High memory usage\n", .{}),
+/// InteractiveMode encapsulates the libxev event loop and termbox input handling
+const InteractiveMode = struct {
+    allocator: std.mem.Allocator,
+    ui: *TerminalUI,
+    agent: *agent_lib.Agent,
+    loop: xev.Loop,
+    should_quit: bool,
+
+    // Completion for TTY polling
+    tty_completion: xev.Completion,
+
+    pub fn init(allocator: std.mem.Allocator, ui: *TerminalUI, agent: *agent_lib.Agent) !InteractiveMode {
+        return InteractiveMode{
+            .allocator = allocator,
+            .ui = ui,
+            .agent = agent,
+            .loop = try xev.Loop.init(.{}),
+            .should_quit = false,
+            .tty_completion = undefined,
+        };
     }
-}
+
+    pub fn deinit(self: *InteractiveMode) void {
+        self.loop.deinit();
+    }
+
+    pub fn run(self: *InteractiveMode) !void {
+        // Get termbox TTY fd for input watching
+        const fds = try tb.getFds();
+        const tty_fd = fds[0];
+
+        // Set up TTY file watcher
+        var tty_file = xev.File{ .fd = tty_fd };
+        tty_file.poll(&self.loop, &self.tty_completion, xev.PollEvent.read, InteractiveMode, self, onTtyReady);
+
+        // Initial render
+        try self.ui.render();
+
+        // Run event loop
+        try self.loop.run(.until_done);
+    }
+
+    fn onTtyReady(
+        self_opt: ?*InteractiveMode,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: xev.File,
+        result: xev.PollError!xev.PollEvent,
+    ) xev.CallbackAction {
+        const self = self_opt orelse return .disarm;
+        _ = result catch return .disarm;
+
+        // Process any available termbox events
+        var event: tb.TbEvent = undefined;
+        while (tb.peekEvent(&event, 0) catch false) {
+            if (event.type == tb.TB_EVENT_KEY) {
+                self.handleKeyEvent(&event);
+            } else if (event.type == tb.TB_EVENT_RESIZE) {
+                self.ui.handleResize();
+            }
+
+            if (self.should_quit) {
+                return .disarm;
+            }
+        }
+
+        // Re-render after processing events
+        self.ui.render() catch {};
+
+        return if (self.should_quit) .disarm else .rearm;
+    }
+
+    fn handleKeyEvent(self: *InteractiveMode, event: *tb.TbEvent) void {
+        if (event.key == tb.TB_KEY_CTRL_C) {
+            self.should_quit = true;
+            return;
+        }
+
+        if (event.key == tb.TB_KEY_ENTER) {
+            // Get input and process it
+            const input = self.ui.getAndClearInput() catch return;
+            defer self.allocator.free(input);
+
+            if (input.len == 0) return;
+
+            // Check for exit commands
+            if (std.mem.eql(u8, input, "quit") or std.mem.eql(u8, input, "exit")) {
+                self.should_quit = true;
+                return;
+            }
+
+            // Add user input to display
+            self.ui.addUserInput(input) catch {};
+
+            // Execute agent turn (blocks but streams via callback)
+            self.agent.executeTurn(input) catch |err| {
+                var buf: [256]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "Error: {any}", .{err}) catch "Error";
+                self.ui.addLine(msg, .error_msg) catch {};
+            };
+
+            return;
+        }
+
+        if (event.key == tb.TB_KEY_BACKSPACE or event.key == tb.TB_KEY_BACKSPACE2) {
+            self.ui.deleteInputChar();
+            return;
+        }
+
+        if (event.key == tb.TB_KEY_ARROW_UP) {
+            self.ui.scrollUp();
+            return;
+        }
+
+        if (event.key == tb.TB_KEY_ARROW_DOWN) {
+            self.ui.scrollDown();
+            return;
+        }
+
+        // Regular character input
+        if (event.ch != 0 and event.ch < 128) {
+            self.ui.addInputChar(@intCast(event.ch)) catch {};
+        }
+    }
+
+};
 
 pub fn main() !void {
     // Initialize allocator
@@ -55,47 +165,21 @@ pub fn main() !void {
     const rf_tool = try read_file.initTool(tool_registry.arena.allocator());
     try tool_registry.register(rf_tool);
 
-    // Initialize agent
-    var dummy_ctx: i32 = 0;
-    var agent = agent_lib.Agent.init(allocator, &api_client, &tool_registry, eventHandler, &dummy_ctx);
+    // Initialize terminal UI
+    var ui = TerminalUI.init(allocator);
+    try ui.initTermbox();
+    defer ui.deinit();
+
+    // Initialize agent with terminal UI as event handler
+    var agent = agent_lib.Agent.init(allocator, &api_client, &tool_registry, TerminalUI.handleAgentUpdate, &ui);
     defer agent.deinit();
 
-    // REPL loop
-    const stdout_fd = std.posix.STDOUT_FILENO;
-    const stdout_file = std.fs.File{ .handle = stdout_fd };
+    // Initialize interactive mode with event loop
+    var interactive_mode = try InteractiveMode.init(allocator, &ui, &agent);
+    defer interactive_mode.deinit();
 
-    var line_buffer: [4096]u8 = undefined;
-
-    while (true) {
-        // Print prompt
-        try stdout_file.writeAll("> ");
-
-        // Read line from stdin using getline alternative
-        // Using std.debug.getStdIn() equivalent via posix syscall
-        const bytes_read = try std.posix.read(std.posix.STDIN_FILENO, &line_buffer);
-
-        if (bytes_read == 0) {
-            break;
-        }
-
-        // Trim whitespace (including newline)
-        const line = std.mem.trim(u8, line_buffer[0..bytes_read], " \t\r\n");
-
-        // Check for exit commands
-        if (std.mem.eql(u8, line, "quit") or std.mem.eql(u8, line, "exit")) {
-            break;
-        }
-
-        // Skip empty lines
-        if (line.len == 0) {
-            continue;
-        }
-
-        // Execute agent turn
-        agent.executeTurn(line) catch |err| {
-            std.debug.print("Error: {any}\n", .{err});
-        };
-    }
+    // Run the event loop
+    try interactive_mode.run();
 }
 
 test {

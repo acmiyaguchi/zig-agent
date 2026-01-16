@@ -195,9 +195,8 @@ class TestBasicShell:
     def test_pwd(self, tmux_session: TmuxSession):
         """PWD command works."""
         tmux_session.run("pwd")
-        # Should show some path
-        capture = tmux_session.wait_for_stable()
-        assert "/" in capture.raw
+        # Should show some path with /
+        assert_text_appears(tmux_session, "/", timeout=2)
 
     def test_environment_variable(self, tmux_session: TmuxSession):
         """Environment variables work."""
