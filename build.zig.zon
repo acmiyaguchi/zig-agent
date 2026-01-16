@@ -1,0 +1,16 @@
+.{
+    .name = .zig_agent,
+    .version = "0.1.0",
+    .fingerprint = 0x1f4045bcc5701022,
+    .minimum_zig_version = "0.13.0",
+    .dependencies = .{
+        .libxev = .{
+            .path = "vendor/libxev",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
