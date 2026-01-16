@@ -24,9 +24,9 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Estimate**: 1 hour
 **Parallel**: Can run standalone
 
-- [ ] Create `build.zig` with basic configuration
-- [ ] Set up `build.zig.zon` with project metadata
-- [ ] Create src/ directory structure:
+- [x] Create `build.zig` with basic configuration
+- [x] Set up `build.zig.zon` with project metadata
+- [x] Create src/ directory structure:
   ```
   src/
   ├── main.zig
@@ -41,8 +41,8 @@ This document breaks down the implementation into small, verifiable tasks ordere
   └── ui/
       └── terminal.zig
   ```
-- [ ] Add stub files with module docstrings
-- [ ] Verify `zig build` succeeds (even with empty mains)
+- [x] Add stub files with module docstrings
+- [x] Verify `zig build` succeeds (even with empty mains)
 
 **Validation**: `zig build` completes without errors
 
@@ -53,14 +53,14 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Parallel**: Can run standalone
 **Risk**: High (C library integration)
 
-- [ ] Add termbox2 to build.zig as system library OR vendored C source
-- [ ] Create minimal Zig bindings in `src/ui/termbox.zig`:
+- [x] Add termbox2 to build.zig as system library OR vendored C source
+- [x] Create minimal Zig bindings in `src/ui/termbox.zig`:
   - tb_init(), tb_shutdown()
   - tb_clear(), tb_present()
   - tb_print(), tb_put_cell()
   - tb_poll_event()
-- [ ] Write test program that initializes termbox2 and renders "Hello"
-- [ ] Verify works on x86_64 (QEMU ARM test in T15)
+- [x] Write test program that initializes termbox2 and renders "Hello"
+- [x] Verify works on x86_64 (QEMU ARM test in T15)
 
 **Validation**: Test program displays "Hello" in terminal
 
@@ -71,13 +71,13 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Parallel**: Can run standalone
 **Risk**: Medium (new library)
 
-- [ ] Add libxev to build.zig.zon dependencies
-- [ ] Create minimal test using xev.Loop:
+- [x] Add libxev to build.zig.zon dependencies
+- [x] Create minimal test using xev.Loop:
   - Initialize loop
   - Add timer callback (print every 1 second)
   - Run loop
   - Clean shutdown
-- [ ] Verify builds and runs
+- [x] Verify builds and runs
 
 **Validation**: Test program prints timestamps every second via libxev
 
@@ -89,15 +89,15 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Estimate**: 2 hours
 **Depends**: T1
 
-- [ ] Create `src/api/types.zig`
-- [ ] Define core types:
+- [x] Create `src/api/types.zig`
+- [x] Define core types:
   - `Message` struct (role, content)
   - `ToolDefinition` struct (name, description, parameters)
   - `ChatCompletionRequest` struct
   - `ChatCompletionChunk` struct (for SSE streaming)
   - `ToolCall` struct (id, function name, arguments)
-- [ ] Add JSON serialization annotations
-- [ ] Write unit test for Message serialization
+  - [x] Add JSON serialization annotations
+  - [x] Write unit test for Message serialization
 
 **Validation**: Unit test serializes Message to correct JSON
 
@@ -107,18 +107,18 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Estimate**: 3 hours
 **Depends**: T4
 
-- [ ] Create `src/api/client.zig`
-- [ ] Implement `APIClient` struct with:
+- [x] Create `src/api/client.zig`
+- [x] Implement `APIClient` struct with:
   - allocator
   - std.http.Client instance
   - api_key: []const u8
   - base_url: []const u8
   - model: []const u8
-- [ ] Implement `buildChatRequest()` function:
+- [x] Implement `buildChatRequest()` function:
   - Takes messages, tools
   - Returns JSON string
   - Sets proper headers (Authorization, Content-Type)
-- [ ] Write unit test with mock data
+- [x] Write unit test with mock data
 
 **Validation**: Unit test produces valid JSON request
 
@@ -129,15 +129,15 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Depends**: T4
 **Risk**: Medium (parsing complexity)
 
-- [ ] Create `parseSSEStream()` function in `src/api/client.zig`
-- [ ] Parse SSE format:
+- [x] Create `parseSSEStream()` function in `src/api/client.zig`
+- [x] Parse SSE format:
   - Skip empty lines
   - Skip comment lines (start with `:`)
   - Parse `data:` lines
   - Handle `data: [DONE]` terminator
-- [ ] Parse JSON chunks into `ChatCompletionChunk`
-- [ ] Handle streaming deltas (content, tool_calls)
-- [ ] Write unit tests with mock SSE data:
+- [x] Parse JSON chunks into `ChatCompletionChunk`
+- [x] Handle streaming deltas (content, tool_calls)
+- [x] Write unit tests with mock SSE data:
   - Simple text streaming
   - Tool call streaming
   - Error in stream
@@ -152,13 +152,13 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Depends**: T5, T6
 **Risk**: High (network + parsing together)
 
-- [ ] Implement `APIClient.streamChatCompletion()`:
+- [x] Implement `APIClient.streamChatCompletion()`:
   - POST to /chat/completions
   - Stream response body
   - Parse SSE chunks
   - Call callback for each chunk
   - Handle errors gracefully
-- [ ] Add basic error handling:
+- [x] Add basic error handling:
   - HTTP errors (4xx, 5xx)
   - Parse errors
   - Network errors

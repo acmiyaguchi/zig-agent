@@ -89,11 +89,10 @@ test "message serialization" {
         .content = "Hello",
     };
 
-    var out = std.array_list.Managed(u8).init(allocator);
-    defer out.deinit();
+    const out = try std.fmt.allocPrint(allocator, "{f}", .{std.json.fmt(msg, .{ .emit_null_optional_fields = false })});
+    defer allocator.free(out);
 
-    try out.writer().print("{f}", .{std.json.fmt(msg, .{ .emit_null_optional_fields = false })});
-    try std.testing.expectEqualStrings("{\"role\":\"user\",\"content\":\"Hello\"}", out.items);
+    try std.testing.expectEqualStrings("{\"role\":\"user\",\"content\":\"Hello\"}", out);
 }
 
 test "request serialization" {
@@ -107,10 +106,9 @@ test "request serialization" {
         .stream = true,
     };
 
-    var out = std.array_list.Managed(u8).init(allocator);
-    defer out.deinit();
+    const out = try std.fmt.allocPrint(allocator, "{f}", .{std.json.fmt(req, .{ .emit_null_optional_fields = false })});
+    defer allocator.free(out);
 
-    try out.writer().print("{f}", .{std.json.fmt(req, .{ .emit_null_optional_fields = false })});
-    try std.testing.expect(std.mem.indexOf(u8, out.items, "\"model\":\"test-model\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out.items, "\"stream\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"model\":\"test-model\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"stream\":true") != null);
 }

@@ -100,11 +100,7 @@ pub const APIClient = struct {
             .stream = true,
         };
 
-        var json_buffer = std.array_list.Managed(u8).init(self.allocator);
-        errdefer json_buffer.deinit();
-
-        try json_buffer.writer().print("{f}", .{std.json.fmt(req, .{ .emit_null_optional_fields = false })});
-        return json_buffer.toOwnedSlice();
+        return std.fmt.allocPrint(self.allocator, "{f}", .{std.json.fmt(req, .{ .emit_null_optional_fields = false })});
     }
 
     pub fn streamChatCompletion(
@@ -121,28 +117,28 @@ pub const APIClient = struct {
         defer self.allocator.free(url_str);
         const parsed_uri = try std.Uri.parse(url_str);
 
-        var server_header_buffer: [4096]u8 = undefined;
-        var req = try self.client.open(.POST, parsed_uri, .{
-            .server_header_buffer = &server_header_buffer,
+        const auth_header = try std.fmt.allocPrint(self.allocator, "Bearer {s}", .{self.api_key});
+        defer self.allocator.free(auth_header);
+
+        const extra_headers = [_]std.http.Header{
+            .{ .name = "Authorization", .value = auth_header },
+            .{ .name = "Content-Type", .value = "application/json" },
+            .{ .name = "HTTP-Referer", .value = "https://github.com/anthony/zig-agent" },
+            .{ .name = "X-Title", .value = "Zig Agent" },
+        };
+
+        var req = try self.client.request(.POST, parsed_uri, .{
+            .extra_headers = &extra_headers,
         });
         defer req.deinit();
 
         req.transfer_encoding = .{ .content_length = payload.len };
-        
-        const auth_header = try std.fmt.allocPrint(self.allocator, "Bearer {s}", .{self.api_key});
-        defer self.allocator.free(auth_header);
-        
-        try req.headers.append("Authorization", auth_header);
-        try req.headers.append("Content-Type", "application/json");
-        try req.headers.append("HTTP-Referer", "https://github.com/anthony/zig-agent");
-        try req.headers.append("X-Title", "Zig Agent");
+        try req.sendBodyComplete(payload);
 
-        try req.send();
-        try req.writeAll(payload);
-        try req.finish();
-        try req.wait();
+        var redirect_buffer: [4096]u8 = undefined;
+        var response = try req.receiveHead(&redirect_buffer);
 
-        if (req.response.status != .ok) {
+        if (response.head.status != .ok) {
             return error.APIError;
         }
 
@@ -150,10 +146,11 @@ pub const APIClient = struct {
         defer parser.deinit();
 
         var read_buf: [16384]u8 = undefined;
-        var reader = req.reader();
+        var transfer_buffer: [16384]u8 = undefined;
+        const reader_ptr = response.reader(&transfer_buffer);
 
         while (true) {
-            const n = try reader.read(&read_buf);
+            const n = try reader_ptr.readSliceShort(&read_buf);
             if (n == 0) break;
 
             try parser.push(read_buf[0..n]);
