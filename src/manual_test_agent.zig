@@ -45,12 +45,15 @@ pub fn main() !void {
     var agent = agent_lib.Agent.init(allocator, &api_client, &tool_registry, eventHandler, &dummy_ctx);
     defer agent.deinit();
 
-    const cwd = try std.process.getCwdAlloc(allocator);
-    defer allocator.free(cwd);
-    const readme_path = try std.fs.path.join(allocator, &.{ cwd, "docs", "README.md" });
-    defer allocator.free(readme_path);
+    // Simple test - create a tiny test file
+    const test_file = "/tmp/zig-agent-test.txt";
+    {
+        const f = try std.fs.cwd().createFile(test_file, .{});
+        defer f.close();
+        try f.writeAll("Hello from test file!");
+    }
 
-    const prompt = try std.fmt.allocPrint(allocator, "Read the file {s} and tell me its title.", .{readme_path});
+    const prompt = try std.fmt.allocPrint(allocator, "Read {s} and tell me what it says.", .{test_file});
     defer allocator.free(prompt);
     
     std.debug.print("User: {s}\n", .{prompt});

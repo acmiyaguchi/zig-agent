@@ -54,6 +54,39 @@ pub const Agent = struct {
     event_handler: agent_types.AgentEventHandler,
     context: *anyopaque,
 
+    const MEMORY_WARNING_THRESHOLD: usize = 40 * 1024 * 1024; // 40MB
+    const MEMORY_REFUSE_THRESHOLD: usize = 45 * 1024 * 1024; // 45MB
+
+    fn getCurrentRSS(allocator: std.mem.Allocator) ?usize {
+        const statm_path = "/proc/self/statm";
+        const file = std.fs.openFileAbsolute(statm_path, .{}) catch {
+            return null;
+        };
+        defer file.close();
+
+        const content = file.readToEndAlloc(allocator, 1024) catch {
+            return null;
+        };
+        defer allocator.free(content);
+
+        var fields = std.mem.splitSequence(u8, content, " ");
+        _ = fields.next(); // Skip first field (vsize)
+
+        // Get RSS field (second field)
+        if (fields.next()) |rss_str| {
+            const rss_pages = std.fmt.parseUnsigned(usize, std.mem.trim(u8, rss_str, " \t\n\r"), 10) catch {
+                return null;
+            };
+
+            // Standard page size on most Linux systems
+            const page_size: usize = 4096;
+
+            return rss_pages * page_size;
+        }
+
+        return null;
+    }
+
     pub fn init(
         allocator: std.mem.Allocator,
         api_client: *client.APIClient,
@@ -76,6 +109,20 @@ pub const Agent = struct {
     }
 
     pub fn executeTurn(self: *Agent, user_input: []const u8) !void {
+        // Check memory usage
+        if (getCurrentRSS(self.allocator)) |rss| {
+            if (rss >= Agent.MEMORY_REFUSE_THRESHOLD) {
+                self.emit(.{ .@"error" = "Memory limit exceeded (45MB). Please restart." });
+                return;
+            }
+            if (rss >= Agent.MEMORY_WARNING_THRESHOLD) {
+                self.emit(.{ .memory_warning = .{
+                    .rss_kb = rss / 1024,
+                    .threshold_kb = Agent.MEMORY_WARNING_THRESHOLD / 1024,
+                }});
+            }
+        }
+
         // Add user message
         try self.conversation.addMessage(.{
             .role = .user,

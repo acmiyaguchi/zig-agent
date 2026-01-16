@@ -77,21 +77,24 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
 
-    // --- Standalone Tests ---
-    const standalone_tests = [_][]const u8{
-        "test_std.zig",
+    // --- Manual Test Executables ---
+    const manual_tests = [_][]const u8{
+        "manual_test_stream",
+        "manual_test_agent",
     };
 
-    for (standalone_tests) |test_file| {
-        const t = b.addTest(.{
-            .name = test_file,
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(b.fmt("tests/{s}", .{test_file})),
-                .target = target,
-                .optimize = optimize,
-            }),
+    for (manual_tests) |test_name| {
+        const test_mod = b.createModule(.{
+            .root_source_file = b.path(b.fmt("src/{s}.zig", .{test_name})),
+            .target = target,
+            .optimize = optimize,
         });
-        const run_t = b.addRunArtifact(t);
-        test_step.dependOn(&run_t.step);
+        const test_exe = b.addExecutable(.{
+            .name = test_name,
+            .root_module = test_mod,
+        });
+        test_exe.root_module.addImport("xev", libxev_mod);
+        test_exe.linkLibC();
+        b.installArtifact(test_exe);
     }
 }

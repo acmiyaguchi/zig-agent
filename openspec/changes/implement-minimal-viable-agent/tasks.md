@@ -162,8 +162,8 @@ This document breaks down the implementation into small, verifiable tasks ordere
   - HTTP errors (4xx, 5xx)
   - Parse errors
   - Network errors
-- [ ] Manual test: Call real OpenRouter API with API key on x86_64
-- [ ] Verify streaming chunks arrive correctly
+- [x] Manual test: Call real OpenRouter API with API key on x86_64
+- [x] Verify streaming chunks arrive correctly
 
 **Validation**: Manual test successfully streams response from OpenRouter
 
@@ -175,17 +175,17 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Estimate**: 1 hour
 **Depends**: T1
 
-- [ ] Create `src/tools/registry.zig`
-- [ ] Define `Tool` struct:
+- [x] Create `src/tools/registry.zig`
+- [x] Define `Tool` struct:
   - name: []const u8
   - description: []const u8
   - parameters: ToolParameters (JSON schema)
   - execute: function pointer
-- [ ] Define `ToolResult` struct:
+- [x] Define `ToolResult` struct:
   - success: bool
   - output: []const u8
   - error_message: ?[]const u8
-- [ ] Create `ToolRegistry` struct (ArrayList of Tool)
+- [x] Create `ToolRegistry` struct (ArrayList of Tool)
 
 **Validation**: Code compiles, types are well-defined
 
@@ -195,18 +195,18 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Estimate**: 2 hours
 **Depends**: T8
 
-- [ ] Create `src/tools/read_file.zig`
-- [ ] Implement `executeReadFile()` function:
+- [x] Create `src/tools/read_file.zig`
+- [x] Implement `executeReadFile()` function:
   - Parse args JSON for "path"
   - Validate path is absolute (per ACP patterns)
   - Read file contents (max 1MB)
   - Return ToolResult with content or error
-- [ ] Add error handling:
+- [x] Add error handling:
   - File not found
   - Permission denied
   - File too large
   - Not absolute path
-- [ ] Write unit tests with test fixtures
+- [x] Write unit tests with test fixtures
 
 **Validation**: Unit tests pass for success and error cases
 
@@ -216,10 +216,10 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Estimate**: 1 hour
 **Depends**: T8, T9
 
-- [ ] Update `APIClient` to convert `Tool[]` to OpenRouter tool definitions
-- [ ] Format tool definitions in OpenAI function calling format
-- [ ] Manual test: Send request with read_file tool definition
-- [ ] Verify OpenRouter accepts tool definition
+- [x] Update `APIClient` to convert `Tool[]` to OpenRouter tool definitions
+- [x] Format tool definitions in OpenAI function calling format
+- [x] Manual test: Send request with read_file tool definition
+- [x] Verify OpenRouter accepts tool definition
 
 **Validation**: OpenRouter API accepts request with tool definitions
 
@@ -231,14 +231,14 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Estimate**: 1 hour
 **Depends**: T1
 
-- [ ] Create `src/agent/types.zig`
-- [ ] Define `AgentUpdate` union (from ACP patterns):
+- [x] Create `src/agent/types.zig`
+- [x] Define `AgentUpdate` union (from ACP patterns):
   - thought
   - message_chunk
   - tool_call
   - tool_result
   - completion
-- [ ] Add helper functions for creating each variant
+- [x] Add helper functions for creating each variant
 
 **Validation**: Code compiles, event types are clear
 
@@ -248,12 +248,12 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Estimate**: 2 hours
 **Depends**: T4, T11
 
-- [ ] Create `ConversationState` struct in `src/agent/agent.zig`:
+- [x] Create `ConversationState` struct in `src/agent/agent.zig`:
   - messages: ArrayList(Message)
   - addMessage()
   - getHistory()
   - clear()
-- [ ] Write unit tests for message management
+- [x] Write unit tests for message management
 
 **Validation**: Unit tests pass for adding/retrieving messages
 
@@ -264,13 +264,13 @@ This document breaks down the implementation into small, verifiable tasks ordere
 **Depends**: T7, T10, T12
 **Risk**: High (integrates multiple components)
 
-- [ ] Create `Agent` struct:
+- [x] Create `Agent` struct:
   - allocator
   - api_client: *APIClient
   - tools: *ToolRegistry
   - conversation: ConversationState
   - event_handler: callback function
-- [ ] Implement `executeTurn()`:
+- [x] Implement `executeTurn()`:
   1. Add user message to conversation
   2. Emit thinking event
   3. Call API with streaming
@@ -282,8 +282,8 @@ This document breaks down the implementation into small, verifiable tasks ordere
      - Add results to conversation
      - Call API again (LOOP)
   6. On stop: emit completion event
-- [ ] Handle errors by emitting error events
-- [ ] Write integration test with mock API client
+- [x] Handle errors by emitting error events
+- [x] Write integration test with mock API client
 
 **Validation**: Integration test completes full turn successfully
 
@@ -296,12 +296,12 @@ This document breaks down the implementation into small, verifiable tasks ordere
 
 Add basic OOM protection for constrained devices.
 
-- [ ] Implement `getCurrentRSS()` function (read /proc/self/statm on Linux)
-- [ ] Add RSS check before each turn:
+- [x] Implement `getCurrentRSS()` function (read /proc/self/statm on Linux)
+- [x] Add RSS check before each turn:
   - Warn user if RSS > 40MB
   - Refuse new input if RSS > 45MB (emit error event)
-- [ ] Add memory_warning event type to AgentUpdate
-- [ ] Test with artificially inflated memory usage
+- [x] Add memory_warning event type to AgentUpdate
+- [x] Test with artificially inflated memory usage
 
 **Validation**: Agent warns when memory is high, refuses input at 45MB
 
