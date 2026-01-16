@@ -370,14 +370,14 @@ Add basic OOM protection for constrained devices.
 **Estimate**: 2 hours
 **Depends**: T13, T15
 
-- [ ] Read OPENROUTER_API_KEY from environment
-- [ ] Initialize allocator (GPA for v1)
-- [ ] Initialize APIClient with API key
-- [ ] Initialize ToolRegistry with read_file
-- [ ] Initialize Agent
-- [ ] Initialize TerminalUI
-- [ ] Run UI event loop
-- [ ] Clean shutdown on exit
+- [x] Read OPENROUTER_API_KEY from environment
+- [x] Initialize allocator (GPA for v1)
+- [x] Initialize APIClient with API key
+- [x] Initialize ToolRegistry with read_file
+- [x] Initialize Agent
+- [x] Initialize TerminalUI
+- [x] Run UI event loop
+- [x] Clean shutdown on exit
 
 **Validation**: Binary runs end-to-end
 
