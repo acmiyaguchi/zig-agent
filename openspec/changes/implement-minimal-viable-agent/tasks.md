@@ -387,18 +387,18 @@ Add basic OOM protection for constrained devices.
 **Estimate**: 3 hours
 **Depends**: T17
 
-- [ ] Test complete flow:
+- [x] Test complete flow:
   1. Start agent
   2. Type: "Read the file README.md"
   3. Verify model calls read_file tool
   4. Verify file content returned
   5. Verify model generates response
-- [ ] Test edge cases:
+- [x] Test edge cases:
   - File doesn't exist
   - Network error
   - Ctrl+C during streaming
   - Multiple turns
-- [ ] Document any issues found
+- [x] Document any issues found
 
 **Validation**: Complete conversation turn works end-to-end
 
@@ -408,11 +408,11 @@ Add basic OOM protection for constrained devices.
 **Estimate**: 2 hours
 **Depends**: T18
 
-- [ ] Run agent with Zig's GPA leak detection enabled
-- [ ] Monitor RSS with `ps` during conversation
-- [ ] Verify <50MB peak usage
-- [ ] Profile with heaptrack if available
-- [ ] Fix any leaks or excessive allocations
+- [x] Run agent with Zig's GPA leak detection enabled
+- [x] Monitor RSS with `ps` during conversation
+- [x] Verify <50MB peak usage
+- [x] Profile with heaptrack if available
+- [x] Fix any leaks or excessive allocations
 
 **Validation**: Memory usage <50MB, no leaks detected
 
@@ -422,16 +422,16 @@ Add basic OOM protection for constrained devices.
 **Estimate**: 2 hours
 **Depends**: T18
 
-- [ ] Cross-compile for armv7l target:
+- [x] Cross-compile for armv7l target:
   ```
   zig build -Dtarget=arm-linux-musleabihf
   ```
-- [ ] Test in QEMU user mode:
+- [x] Test in QEMU user mode:
   ```
   qemu-arm-static ./zig-out/bin/zig-agent
   ```
-- [ ] Verify basic functionality works
-- [ ] Document any ARM-specific issues
+- [x] Verify basic functionality works
+- [x] Document any ARM-specific issues
 
 **Validation**: Binary runs in QEMU ARM emulation
 
