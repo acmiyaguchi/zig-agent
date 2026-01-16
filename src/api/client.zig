@@ -8,10 +8,12 @@ pub const SSEEvent = union(enum) {
 
 pub const SSEParser = struct {
     buffer: std.array_list.Managed(u8),
+    consumed: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator) SSEParser {
         return .{
             .buffer = std.array_list.Managed(u8).init(allocator),
+            .consumed = 0,
         };
     }
 
@@ -24,6 +26,12 @@ pub const SSEParser = struct {
     }
 
     pub fn next(self: *SSEParser) !?SSEEvent {
+        // Remove previously consumed data
+        if (self.consumed > 0) {
+            try self.buffer.replaceRange(0, self.consumed, &.{});
+            self.consumed = 0;
+        }
+
         while (true) {
             const items = self.buffer.items;
             const newline_idx = std.mem.indexOfScalar(u8, items, '\n') orelse return null;
@@ -48,13 +56,16 @@ pub const SSEParser = struct {
                 }
             }
 
-            // Remove processed line including newline
-            try self.buffer.replaceRange(0, newline_idx + 1, &.{});
+            // Mark this line (including newline) as consumed
+            self.consumed = newline_idx + 1;
 
             if (processed_event) |ev| {
                 return ev;
             }
-            // If line was ignored (comment or empty), loop continues to next line
+
+            // If line was ignored (comment or empty), remove it now and continue
+            try self.buffer.replaceRange(0, self.consumed, &.{});
+            self.consumed = 0;
         }
     }
 };
