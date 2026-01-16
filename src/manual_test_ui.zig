@@ -46,9 +46,10 @@ pub fn main() !void {
     try ui.addLine("Warning: Memory usage high", .warning);
     try ui.addLine("", .normal);
 
-    // Test long line wrapping (should wrap to multiple lines, max 4)
-    try ui.addLine("This is a very long line that should wrap to the next line automatically. It contains a lot of text to demonstrate the word wrapping functionality. The line should wrap up to 4 times and then show ... if it's too long. Let's add even more text to make sure it gets truncated properly with the ellipsis indicator at the end. Here is even more text to guarantee that this line will exceed the maximum number of wrapped lines allowed by the UI, which should cause the last line to end with an ellipsis to indicate truncation. This should definitely be enough text now.", .assistant);
+    // Test long line wrapping (output lines wrap fully with scroll)
+    try ui.addLine("This is a long assistant response that will wrap to multiple lines. The output area supports full scrolling so you can see all content. Try using arrow keys to scroll up/down through the conversation history.", .assistant);
     try ui.addLine("", .normal);
+    try ui.addLine("Type a long message to test input wrapping (max 4 lines displayed, 2000 char limit).", .system);
 
     // Render initial state
     try ui.render();

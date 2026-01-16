@@ -44,8 +44,10 @@ pub const TerminalUI = struct {
     const COLOR_WARNING: u64 = 0x03; // Yellow
     const COLOR_SYSTEM: u64 = 0x07; // White (dim)
 
-    // Maximum number of screen lines a single output line can wrap to
-    const MAX_WRAP_LINES: usize = 4;
+    // Maximum number of screen lines for user input display
+    const MAX_INPUT_WRAP_LINES: usize = 4;
+    // Maximum characters for user input (reasonable limit for LLM messages)
+    const MAX_INPUT_CHARS: usize = 2000;
 
     pub fn init(allocator: std.mem.Allocator) TerminalUI {
         return TerminalUI{
@@ -136,26 +138,28 @@ pub const TerminalUI = struct {
         return count;
     }
 
-    /// Count how many screen lines a single output line takes (capped at MAX_WRAP_LINES)
+    /// Count how many screen lines a single output line takes
     fn countLineWraps(self: *TerminalUI, text: []const u8) usize {
         if (text.len == 0) return 1;
         const w = if (self.width > 0) self.width else 80;
-        const raw_wraps = (text.len + w - 1) / w;
-        return @min(raw_wraps, MAX_WRAP_LINES);
+        return (text.len + w - 1) / w;
     }
 
-    /// Check if a line exceeds MAX_WRAP_LINES
-    fn isLineTruncated(self: *TerminalUI, text: []const u8) bool {
-        if (text.len == 0) return false;
-        const w = if (self.width > 0) self.width else 80;
-        const raw_wraps = (text.len + w - 1) / w;
-        return raw_wraps > MAX_WRAP_LINES;
+    /// Count input wrap lines (capped for display)
+    fn countInputWrapLines(self: *TerminalUI) usize {
+        const input_len = self.input_buffer.items.len;
+        if (input_len == 0) return 1;
+        const prompt_len: usize = 2; // "> "
+        const available_width = if (self.width > prompt_len) self.width - prompt_len else 1;
+        const raw_wraps = (input_len + available_width - 1) / available_width;
+        return @min(raw_wraps, MAX_INPUT_WRAP_LINES);
     }
 
-    /// Get number of lines available for output (excluding input line)
+    /// Get number of lines available for output (excluding input area)
     fn getVisibleLineCount(self: *TerminalUI) usize {
-        if (self.height <= 2) return 1;
-        return self.height - 2; // Reserve 2 lines for input area
+        const input_lines = self.countInputWrapLines();
+        if (self.height <= input_lines + 1) return 1;
+        return self.height - input_lines - 1; // Reserve space for input + 1 line buffer
     }
 
     /// Get color for a line type
@@ -184,11 +188,10 @@ pub const TerminalUI = struct {
         var screen_row: usize = 0;
         var lines_skipped: usize = 0;
 
-        // Render each output line with wrapping
+        // Render each output line with wrapping (full scroll, no truncation)
         for (self.output_lines.items) |line| {
             const wraps = self.countLineWraps(line.text);
             const color = getColor(line.line_type);
-            const truncated = self.isLineTruncated(line.text);
 
             // Handle scrolling - skip lines before scroll_offset
             if (lines_skipped + wraps <= self.scroll_offset) {
@@ -198,14 +201,12 @@ pub const TerminalUI = struct {
 
             // Render this line (possibly partially if at scroll boundary)
             var text_offset: usize = 0;
-            var wrap_idx: usize = 0;
 
             while (text_offset < line.text.len or (text_offset == 0 and line.text.len == 0)) {
                 // Skip wrapped segments before scroll offset
                 if (lines_skipped < self.scroll_offset) {
                     lines_skipped += 1;
                     text_offset += self.width;
-                    wrap_idx += 1;
                     if (line.text.len == 0) break;
                     continue;
                 }
@@ -213,31 +214,15 @@ pub const TerminalUI = struct {
                 // Stop if we've filled the visible area
                 if (screen_row >= visible_lines) break;
 
-                // Stop if we've hit MAX_WRAP_LINES for this output line
-                if (wrap_idx >= MAX_WRAP_LINES) break;
-
                 // Draw this segment
                 const segment_end = @min(text_offset + self.width, line.text.len);
-                var segment = if (text_offset < line.text.len) line.text[text_offset..segment_end] else "";
+                const segment = if (text_offset < line.text.len) line.text[text_offset..segment_end] else "";
 
-                // On the last allowed wrap line, show "..." if truncated
-                const is_last_wrap = (wrap_idx == MAX_WRAP_LINES - 1);
-                if (is_last_wrap and truncated) {
-                    // Draw segment with "..." at end
-                    if (segment.len >= 3) {
-                        try self.drawText(0, screen_row, segment[0 .. segment.len - 3], color);
-                        try self.drawText(segment.len - 3, screen_row, "...", color);
-                    } else {
-                        try self.drawText(0, screen_row, "...", color);
-                    }
-                } else {
-                    try self.drawText(0, screen_row, segment, color);
-                }
+                try self.drawText(0, screen_row, segment, color);
 
                 screen_row += 1;
                 lines_skipped += 1;
                 text_offset += self.width;
-                wrap_idx += 1;
 
                 if (line.text.len == 0) break;
             }
@@ -246,27 +231,63 @@ pub const TerminalUI = struct {
         }
     }
 
-    /// Render the input line at the bottom
+    /// Render the input area at the bottom (supports multi-line wrapping)
     pub fn renderInputLine(self: *TerminalUI) !void {
         if (!self.initialized) return;
 
-        const input_row = self.height - 1;
         const prompt = "> ";
-
-        // Draw prompt
-        try self.drawText(0, input_row, prompt, COLOR_USER);
-
-        // Draw input buffer
-        const input_start = prompt.len;
-        const max_input_width = self.width - prompt.len;
+        const prompt_len: usize = prompt.len;
         const input_text = self.input_buffer.items;
+        const available_width = if (self.width > prompt_len) self.width - prompt_len else 1;
 
-        if (input_text.len <= max_input_width) {
-            try self.drawText(input_start, input_row, input_text, COLOR_DEFAULT);
-        } else {
-            // Show end of input if it's too long
-            const start = input_text.len - max_input_width;
-            try self.drawText(input_start, input_row, input_text[start..], COLOR_DEFAULT);
+        // Calculate how many lines the input takes (capped)
+        const input_lines = self.countInputWrapLines();
+
+        // Calculate starting row for input area
+        const input_start_row = if (self.height > input_lines) self.height - input_lines else 0;
+
+        // Check if input is truncated (exceeds display limit)
+        const total_input_lines = if (input_text.len == 0) 1 else (input_text.len + available_width - 1) / available_width;
+        const is_truncated = total_input_lines > MAX_INPUT_WRAP_LINES;
+
+        // If truncated, show from the end so user sees what they're typing
+        var text_start: usize = 0;
+        if (is_truncated) {
+            // Show the last MAX_INPUT_WRAP_LINES worth of text
+            const chars_to_show = available_width * MAX_INPUT_WRAP_LINES;
+            if (input_text.len > chars_to_show) {
+                text_start = input_text.len - chars_to_show;
+            }
+        }
+
+        // Draw each line of input
+        var line_idx: usize = 0;
+        var text_offset: usize = text_start;
+
+        while (line_idx < input_lines and (input_start_row + line_idx) < self.height) {
+            const row = input_start_row + line_idx;
+
+            if (line_idx == 0) {
+                // First line gets prompt, possibly with "..." if truncated
+                if (is_truncated) {
+                    try self.drawText(0, row, "...", COLOR_SYSTEM);
+                } else {
+                    try self.drawText(0, row, prompt, COLOR_USER);
+                }
+            }
+
+            // Draw text segment
+            const col_start: usize = if (line_idx == 0) prompt_len else 0;
+            const line_width = if (line_idx == 0) available_width else self.width;
+            const segment_end = @min(text_offset + line_width, input_text.len);
+
+            if (text_offset < input_text.len) {
+                const segment = input_text[text_offset..segment_end];
+                try self.drawText(col_start, row, segment, COLOR_DEFAULT);
+            }
+
+            text_offset = segment_end;
+            line_idx += 1;
         }
     }
 
@@ -311,8 +332,11 @@ pub const TerminalUI = struct {
         self.scrollToBottom();
     }
 
-    /// Add a character to input buffer
+    /// Add a character to input buffer (enforces MAX_INPUT_CHARS limit)
     pub fn addInputChar(self: *TerminalUI, char: u8) !void {
+        if (self.input_buffer.items.len >= MAX_INPUT_CHARS) {
+            return; // At limit, ignore additional input
+        }
         try self.input_buffer.append(self.allocator, char);
         self.cursor_pos = self.input_buffer.items.len;
     }
@@ -500,11 +524,24 @@ test "terminal ui line wrapping count" {
     // Just over width = 2 screen lines
     try std.testing.expectEqual(@as(usize, 2), ui.countLineWraps("01234567890"));
 
-    // Long line = 3 screen lines
+    // Long line = 3 screen lines (output lines are NOT capped)
     try std.testing.expectEqual(@as(usize, 3), ui.countLineWraps("012345678901234567890123456789"));
 
-    // Very long line = capped at MAX_WRAP_LINES (4)
-    try std.testing.expectEqual(@as(usize, 4), ui.countLineWraps("0123456789012345678901234567890123456789012345678901234567890"));
-    try std.testing.expect(ui.isLineTruncated("0123456789012345678901234567890123456789012345678901234567890"));
-    try std.testing.expect(!ui.isLineTruncated("012345678901234567890123456789")); // 3 lines, not truncated
+    // Very long output line wraps fully (no cap on output)
+    try std.testing.expectEqual(@as(usize, 7), ui.countLineWraps("0123456789012345678901234567890123456789012345678901234567890"));
+}
+
+test "terminal ui input character limit" {
+    const allocator = std.testing.allocator;
+    var ui = TerminalUI.init(allocator);
+    defer ui.deinit();
+
+    // Add characters up to limit
+    var i: usize = 0;
+    while (i < TerminalUI.MAX_INPUT_CHARS + 10) : (i += 1) {
+        ui.addInputChar('x') catch {};
+    }
+
+    // Should be capped at MAX_INPUT_CHARS
+    try std.testing.expectEqual(TerminalUI.MAX_INPUT_CHARS, ui.input_buffer.items.len);
 }
