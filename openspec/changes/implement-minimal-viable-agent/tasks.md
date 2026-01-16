@@ -313,21 +313,22 @@ Add basic OOM protection for constrained devices.
 **Estimate**: 3 hours
 **Depends**: T2, T11
 
-- [ ] Create `TerminalUI` struct in `src/ui/terminal.zig`:
-  - tb: termbox handle
-  - output_lines: ArrayList([]const u8)
-  - renderOutput()
-  - renderInputLine()
-- [ ] Implement `handleAgentUpdate()`:
+- [x] Create `TerminalUI` struct in `src/ui/terminal.zig`:
+  - tb: termbox handle (via initTermbox())
+  - output_lines: ArrayList(OutputLine) with LineType for coloring
+  - renderOutput() with full scrolling support
+  - renderInputLine() with multi-line wrapping (4-line max, 2000 char limit)
+- [x] Implement `handleAgentUpdate()`:
   - Switch on AgentUpdate type
-  - Append to output_lines
-  - Call renderOutput()
-- [ ] Implement `renderOutput()`:
+  - Append to output_lines (with appropriate LineType)
+  - Call render() to update display
+- [x] Implement `renderOutput()`:
   - Clear screen
-  - Draw output lines (scroll if needed)
-  - Draw input prompt at bottom
+  - Draw output lines with word wrapping and scrolling
+  - Color coding for different line types (user, assistant, tool, error, warning)
   - Present buffer
-- [ ] Manual test: Render mock agent updates
+- [x] Manual test: Render mock agent updates via `manual_test_ui.zig`
+- [x] Tested with tmux harness (termbox-testing skill)
 
 **Validation**: Terminal displays agent updates correctly
 
