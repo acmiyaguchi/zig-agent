@@ -57,9 +57,13 @@ That's it. The model calls tools until it decides the task is complete. Everythi
 - Subagent spawning and lifecycle management (v2+)
 
 ### API Client
-- HTTP/2 client for Claude API
-- Streaming response parser
+- HTTP client for OpenRouter API (unified access to Claude + 400+ models)
+- Streaming response parser (Server-Sent Events)
 - Connection pooling and retry logic
+- Dynamic model selection (Haiku/Sonnet/Opus)
+- Fallback routing on provider errors
+
+See [openrouter-api.md](openrouter-api.md) for API details.
 
 ### Tool Execution Engine
 - Sandboxed command execution

@@ -28,7 +28,8 @@ docs/
     ├── planning-system.md       # Task tracking and TodoWrite tool
     ├── memory-management.md      # Memory allocation and subagent budgets
     ├── conversation-state.md    # Message tracking and serialization
-    ├── api-client.md            # Claude API communication
+    ├── openrouter-api.md        # OpenRouter API integration
+    ├── api-client.md            # HTTP client implementation
     ├── streaming.md             # SSE response handling
     ├── tool-execution.md        # Tool system design
     ├── file-operations.md       # File I/O implementation
@@ -62,6 +63,7 @@ When building specific subsystems:
 - [memory-management.md](concepts/memory-management.md) - Subagent strategies
 
 #### API Communication
+- [openrouter-api.md](concepts/openrouter-api.md) - OpenRouter integration (recommended)
 - [api-client.md](concepts/api-client.md) - HTTP client design
 - [streaming.md](concepts/streaming.md) - SSE parsing and handling
 - [REFERENCES.md](REFERENCES.md#api-and-streaming) - API documentation
@@ -173,11 +175,28 @@ Covers efficient data structures for tracking conversation history and minimizin
 - Incremental parsing (stream events, don't buffer entire responses)
 - Context window management and message pruning
 
-### [api-client.md](concepts/api-client.md)
-Explains how we communicate efficiently with the Claude API.
+### [openrouter-api.md](concepts/openrouter-api.md)
+**Recommended API provider** for zig-agent. Comprehensive guide to OpenRouter integration.
 
 **Key topics**:
-- HTTP/2 client design
+- Why OpenRouter vs direct Anthropic API (flexibility, cost, reliability)
+- Authentication and configuration (API keys, headers)
+- Request/response formats (OpenAI-compatible API)
+- Streaming implementation (SSE parsing, error handling)
+- Model selection (Haiku/Sonnet/Opus, dynamic switching)
+- Tool use (function calling in OpenRouter format)
+- Cost optimization strategies (dynamic model selection, caching)
+- Fallback routing (if Claude down, use GPT/Gemini)
+- Memory considerations for N900 (streaming buffers, connection pooling)
+- Troubleshooting and debugging
+
+**Why OpenRouter**: Single API for 400+ models, same pricing as providers, trivial model switching, built-in fallbacks.
+
+### [api-client.md](concepts/api-client.md)
+Explains HTTP client implementation details.
+
+**Key topics**:
+- HTTP client design (std.http.Client)
 - Connection management and pooling
 - Request lifecycle and error handling
 

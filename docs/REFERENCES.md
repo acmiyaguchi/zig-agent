@@ -115,21 +115,43 @@ This document contains references to other projects, libraries, and resources th
 
 ## API and Streaming
 
-### Claude API
+### OpenRouter (Recommended)
+- **Website**: https://openrouter.ai
+- **Docs**: https://openrouter.ai/docs
+- **API Reference**: https://openrouter.ai/docs/api/reference/overview
+- **Quickstart**: https://openrouter.ai/docs/quickstart
+- **Why use**: Unified API for 400+ models (Claude, GPT, Gemini, etc.)
+- **Pricing**: No markup over provider pricing
+- **Authentication**: https://openrouter.ai/docs/api/reference/authentication
+- **Streaming**: https://openrouter.ai/docs/api/reference/streaming
+- **Claude Code Integration**: https://openrouter.ai/docs/guides/guides/claude-code-integration
+- **What to learn**:
+  - OpenAI-compatible API format (simpler than native Anthropic API)
+  - Dynamic model switching (Haiku/Sonnet/Opus with single code path)
+  - Fallback strategies (if Claude down, route to GPT/Gemini)
+  - Cost optimization (use Haiku for simple tasks, Opus for complex)
+- **Relevant patterns**: Model routing, error handling, rate limiting
+- **See**: [docs/concepts/openrouter-api.md](concepts/openrouter-api.md)
+
+### Claude API (Direct)
 - **Docs**: https://docs.anthropic.com/
 - **API Reference**: https://docs.anthropic.com/en/api/
 - **Streaming**: Server-Sent Events (SSE) format
 - **Rate Limits**: Documented per tier
+- **Note**: We use OpenRouter instead for flexibility, but direct API is simpler if only using Claude
 
 ### SSE (Server-Sent Events)
 - **Spec**: https://html.spec.whatwg.org/multipage/server-sent-events.html
 - **Examples**: Many JavaScript examples, few low-level
 - **Parsing**: Simple line-based protocol
+- **Format**: Lines prefixed with `data:`, terminated by `data: [DONE]`
+- **Comments**: Lines starting with `:` (used by OpenRouter for keepalive)
 
 ### HTTP/2
 - **RFC 7540**: HTTP/2 specification
 - **nghttp2**: C library (potential binding target)
 - **h2**: Rust implementation (for reference)
+- **Note**: OpenRouter supports HTTP/1.1, HTTP/2 optional
 
 ## Memory Management Patterns
 
