@@ -44,6 +44,9 @@ pub const TerminalUI = struct {
     const COLOR_WARNING: u64 = 0x03; // Yellow
     const COLOR_SYSTEM: u64 = 0x07; // White (dim)
 
+    // Maximum number of screen lines a single output line can wrap to
+    const MAX_WRAP_LINES: usize = 4;
+
     pub fn init(allocator: std.mem.Allocator) TerminalUI {
         return TerminalUI{
             .allocator = allocator,
@@ -133,11 +136,20 @@ pub const TerminalUI = struct {
         return count;
     }
 
-    /// Count how many screen lines a single output line takes
+    /// Count how many screen lines a single output line takes (capped at MAX_WRAP_LINES)
     fn countLineWraps(self: *TerminalUI, text: []const u8) usize {
         if (text.len == 0) return 1;
         const w = if (self.width > 0) self.width else 80;
-        return (text.len + w - 1) / w;
+        const raw_wraps = (text.len + w - 1) / w;
+        return @min(raw_wraps, MAX_WRAP_LINES);
+    }
+
+    /// Check if a line exceeds MAX_WRAP_LINES
+    fn isLineTruncated(self: *TerminalUI, text: []const u8) bool {
+        if (text.len == 0) return false;
+        const w = if (self.width > 0) self.width else 80;
+        const raw_wraps = (text.len + w - 1) / w;
+        return raw_wraps > MAX_WRAP_LINES;
     }
 
     /// Get number of lines available for output (excluding input line)
@@ -176,6 +188,7 @@ pub const TerminalUI = struct {
         for (self.output_lines.items) |line| {
             const wraps = self.countLineWraps(line.text);
             const color = getColor(line.line_type);
+            const truncated = self.isLineTruncated(line.text);
 
             // Handle scrolling - skip lines before scroll_offset
             if (lines_skipped + wraps <= self.scroll_offset) {
@@ -200,11 +213,26 @@ pub const TerminalUI = struct {
                 // Stop if we've filled the visible area
                 if (screen_row >= visible_lines) break;
 
+                // Stop if we've hit MAX_WRAP_LINES for this output line
+                if (wrap_idx >= MAX_WRAP_LINES) break;
+
                 // Draw this segment
                 const segment_end = @min(text_offset + self.width, line.text.len);
-                const segment = if (text_offset < line.text.len) line.text[text_offset..segment_end] else "";
+                var segment = if (text_offset < line.text.len) line.text[text_offset..segment_end] else "";
 
-                try self.drawText(0, screen_row, segment, color);
+                // On the last allowed wrap line, show "..." if truncated
+                const is_last_wrap = (wrap_idx == MAX_WRAP_LINES - 1);
+                if (is_last_wrap and truncated) {
+                    // Draw segment with "..." at end
+                    if (segment.len >= 3) {
+                        try self.drawText(0, screen_row, segment[0 .. segment.len - 3], color);
+                        try self.drawText(segment.len - 3, screen_row, "...", color);
+                    } else {
+                        try self.drawText(0, screen_row, "...", color);
+                    }
+                } else {
+                    try self.drawText(0, screen_row, segment, color);
+                }
 
                 screen_row += 1;
                 lines_skipped += 1;
@@ -472,6 +500,11 @@ test "terminal ui line wrapping count" {
     // Just over width = 2 screen lines
     try std.testing.expectEqual(@as(usize, 2), ui.countLineWraps("01234567890"));
 
-    // Long line = multiple screen lines
+    // Long line = 3 screen lines
     try std.testing.expectEqual(@as(usize, 3), ui.countLineWraps("012345678901234567890123456789"));
+
+    // Very long line = capped at MAX_WRAP_LINES (4)
+    try std.testing.expectEqual(@as(usize, 4), ui.countLineWraps("0123456789012345678901234567890123456789012345678901234567890"));
+    try std.testing.expect(ui.isLineTruncated("0123456789012345678901234567890123456789012345678901234567890"));
+    try std.testing.expect(!ui.isLineTruncated("012345678901234567890123456789")); // 3 lines, not truncated
 }
