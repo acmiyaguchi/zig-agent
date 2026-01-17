@@ -81,6 +81,7 @@ pub fn build(b: *std.Build) void {
     const manual_tests = [_][]const u8{
         "manual_test_stream",
         "manual_test_agent",
+        "test_all_tools",
     };
 
     for (manual_tests) |test_name| {

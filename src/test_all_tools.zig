@@ -1,9 +1,15 @@
+// Test agent with all tools but no UI
 const std = @import("std");
 const api_types = @import("api/types.zig");
 const agent_types = @import("agent/types.zig");
 const client = @import("api/client.zig");
 const registry = @import("tools/registry.zig");
 const read_file = @import("tools/read_file.zig");
+const list_directory = @import("tools/list_directory.zig");
+const search_files = @import("tools/search_files.zig");
+const write_file = @import("tools/write_file.zig");
+const edit_file = @import("tools/edit_file.zig");
+const run_command = @import("tools/run_command.zig");
 const agent_lib = @import("agent/agent.zig");
 
 fn eventHandler(update: agent_types.AgentUpdate, context: *anyopaque) void {
@@ -39,25 +45,30 @@ pub fn main() !void {
     var tool_registry = registry.ToolRegistry.init(allocator);
     defer tool_registry.deinit();
 
+    // Register ALL tools (same as zig-agent)
     const rf_tool = try read_file.initTool(tool_registry.arena.allocator());
     try tool_registry.register(rf_tool);
+
+    const ld_tool = try list_directory.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(ld_tool);
+
+    const sf_tool = try search_files.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(sf_tool);
+
+    const wf_tool = try write_file.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(wf_tool);
+
+    const ef_tool = try edit_file.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(ef_tool);
+
+    const rc_tool = try run_command.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(rc_tool);
 
     var dummy_ctx: i32 = 0;
     var agent = agent_lib.Agent.init(allocator, &api_client, &tool_registry, eventHandler, &dummy_ctx);
     defer agent.deinit();
 
-    // Simple test - create a tiny test file
-    const test_file = "/tmp/zig-agent-test.txt";
-    {
-        const f = try std.fs.cwd().createFile(test_file, .{});
-        defer f.close();
-        try f.writeAll("Hello from test file!");
-    }
+    std.debug.print("User: List files in /tmp\n", .{});
 
-    const prompt = try std.fmt.allocPrint(allocator, "Read {s} and tell me what it says.", .{test_file});
-    defer allocator.free(prompt);
-    
-    std.debug.print("User: {s}\n", .{prompt});
-    
-    try agent.executeTurn(prompt);
+    try agent.executeTurn("List files in /tmp");
 }

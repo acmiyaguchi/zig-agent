@@ -33,6 +33,8 @@ pub const TerminalUI = struct {
     initialized: bool,
     width: usize,
     height: usize,
+    total_input_tokens: u32 = 0,
+    total_output_tokens: u32 = 0,
 
     // Color definitions (using basic 8 colors for compatibility)
     const COLOR_DEFAULT: u64 = tb.TB_DEFAULT;
@@ -302,6 +304,39 @@ pub const TerminalUI = struct {
         try self.drawText(0, status_row, status, COLOR_SYSTEM);
     }
 
+    /// Format token count for display (raw if <1K, K for 1K-999K, M for 1M+)
+    fn formatTokenCount(count: u32, buf: []u8) []const u8 {
+        if (count < 1000) {
+            return std.fmt.bufPrint(buf, "{d}", .{count}) catch "?";
+        } else if (count < 1_000_000) {
+            const k = @as(f64, @floatFromInt(count)) / 1000.0;
+            return std.fmt.bufPrint(buf, "{d:.1}K", .{k}) catch "?K";
+        } else {
+            const m = @as(f64, @floatFromInt(count)) / 1_000_000.0;
+            return std.fmt.bufPrint(buf, "{d:.1}M", .{m}) catch "?M";
+        }
+    }
+
+    /// Render token usage in status area
+    pub fn renderTokenStatus(self: *TerminalUI) !void {
+        if (!self.initialized) return;
+        if (self.height < 3) return;
+
+        const total = self.total_input_tokens + self.total_output_tokens;
+        if (total == 0) return;
+
+        var buf: [32]u8 = undefined;
+        const formatted = formatTokenCount(total, &buf);
+
+        var status_buf: [64]u8 = undefined;
+        const status = std.fmt.bufPrint(&status_buf, "Tokens: {s}", .{formatted}) catch "Tokens: ?";
+
+        // Draw at the right side of the status row
+        const status_row = self.height - 2;
+        const x = if (self.width > status.len) self.width - status.len - 1 else 0;
+        try self.drawText(x, status_row, status, COLOR_SYSTEM);
+    }
+
     /// Draw text at a position
     fn drawText(self: *TerminalUI, x: usize, y: usize, text: []const u8, fg: u64) !void {
         _ = self;
@@ -320,6 +355,7 @@ pub const TerminalUI = struct {
         if (!self.initialized) return;
 
         try self.renderOutput();
+        try self.renderTokenStatus();
         try self.renderInputLine();
         try tb.present();
     }
@@ -436,6 +472,10 @@ pub const TerminalUI = struct {
                 const msg = std.fmt.bufPrint(&buf, "Warning: Memory usage {d}KB (threshold: {d}KB)", .{ mw.rss_kb, mw.threshold_kb }) catch "Memory warning";
                 self.addLine(msg, .warning) catch {};
             },
+            .usage_update => |usage| {
+                self.total_input_tokens = usage.total_input_tokens;
+                self.total_output_tokens = usage.total_output_tokens;
+            },
         }
 
         // Re-render after update
@@ -447,6 +487,62 @@ pub const TerminalUI = struct {
         var buf: [1024]u8 = undefined;
         const msg = std.fmt.bufPrint(&buf, "> {s}", .{input}) catch input;
         try self.addLine(msg, .user_input);
+    }
+
+    /// Request confirmation from user for a tool execution
+    /// Returns true if confirmed (Y/y), false if denied (N/n/Enter)
+    pub fn requestConfirmation(self: *TerminalUI, tool_name: []const u8, arguments: []const u8) bool {
+        // Build confirmation message
+        var msg_buf: [512]u8 = undefined;
+
+        // Truncate arguments for display
+        const max_args_display: usize = 80;
+        const args_display = if (arguments.len > max_args_display)
+            arguments[0..max_args_display]
+        else
+            arguments;
+
+        const suffix = if (arguments.len > max_args_display) "..." else "";
+        const msg = std.fmt.bufPrint(&msg_buf, "Execute {s}({s}{s})? [Y/n] ", .{
+            tool_name,
+            args_display,
+            suffix,
+        }) catch "Execute tool? [Y/n] ";
+
+        // Add the confirmation line
+        self.addLine(msg, .warning) catch {};
+        self.render() catch {};
+
+        // Wait for user input
+        var event: tb.TbEvent = undefined;
+        while (true) {
+            // Block until we get an event
+            if (tb.peekEvent(&event, 100) catch false) {
+                if (event.type == tb.TB_EVENT_KEY) {
+                    // Y/y = confirm
+                    if (event.ch == 'Y' or event.ch == 'y') {
+                        self.addLine("[Confirmed]", .system) catch {};
+                        self.render() catch {};
+                        return true;
+                    }
+                    // N/n/Enter = deny
+                    if (event.ch == 'N' or event.ch == 'n' or event.key == tb.TB_KEY_ENTER) {
+                        self.addLine("[Cancelled]", .warning) catch {};
+                        self.render() catch {};
+                        return false;
+                    }
+                    // Ctrl+C = deny and potentially signal quit (handled by caller)
+                    if (event.key == tb.TB_KEY_CTRL_C) {
+                        self.addLine("[Cancelled]", .warning) catch {};
+                        self.render() catch {};
+                        return false;
+                    }
+                } else if (event.type == tb.TB_EVENT_RESIZE) {
+                    self.handleResize();
+                    self.render() catch {};
+                }
+            }
+        }
     }
 };
 

@@ -28,11 +28,16 @@ pub const ToolDefinition = struct {
     },
 };
 
+pub const StreamOptions = struct {
+    include_usage: bool = true,
+};
+
 pub const ChatCompletionRequest = struct {
     model: []const u8,
     messages: []const Message,
     tools: ?[]const ToolDefinition = null,
     stream: bool = true,
+    stream_options: ?StreamOptions = .{ .include_usage = true },
 };
 
 pub const ToolCall = struct {
@@ -42,6 +47,12 @@ pub const ToolCall = struct {
         name: []const u8,
         arguments: []const u8,
     },
+};
+
+pub const UsageInfo = struct {
+    prompt_tokens: u32 = 0,
+    completion_tokens: u32 = 0,
+    total_tokens: u32 = 0,
 };
 
 pub const ChatCompletionChunk = struct {
@@ -66,6 +77,7 @@ pub const ChatCompletionChunk = struct {
         },
         finish_reason: ?[]const u8 = null,
     },
+    usage: ?UsageInfo = null,
 };
 
 pub const StreamChunk = union(enum) {
@@ -80,6 +92,10 @@ pub const StreamChunk = union(enum) {
         arguments: []const u8,
     },
     finish: ?[]const u8,
+    usage: struct {
+        prompt_tokens: u32,
+        completion_tokens: u32,
+    },
 };
 
 test "message serialization" {

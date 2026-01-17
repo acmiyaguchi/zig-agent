@@ -1,6 +1,16 @@
 const std = @import("std");
 const types = @import("types.zig");
 
+/// Debug logging (writes to file)
+fn debugLog(comptime fmt: []const u8, args: anytype) void {
+    const file = std.fs.cwd().createFile("/tmp/zig-agent-debug.log", .{ .truncate = false }) catch return;
+    defer file.close();
+    file.seekFromEnd(0) catch return;
+    var buf: [4096]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, "[api] " ++ fmt ++ "\n", args) catch return;
+    file.writeAll(msg) catch return;
+}
+
 pub const SSEEvent = union(enum) {
     json: []const u8,
     done,
@@ -110,12 +120,16 @@ pub const APIClient = struct {
         callback: *const fn (types.StreamChunk, *anyopaque) void,
         context: *anyopaque,
     ) !void {
+        debugLog("streamChatCompletion start", .{});
+
         const payload = try self.buildRequest(messages, tools);
         defer self.allocator.free(payload);
+        debugLog("request payload built, len={d}", .{payload.len});
 
         const url_str = try std.fmt.allocPrint(self.allocator, "{s}/chat/completions", .{self.base_url});
         defer self.allocator.free(url_str);
         const parsed_uri = try std.Uri.parse(url_str);
+        debugLog("url: {s}", .{url_str});
 
         const auth_header = try std.fmt.allocPrint(self.allocator, "Bearer {s}", .{self.api_key});
         defer self.allocator.free(auth_header);
@@ -127,18 +141,34 @@ pub const APIClient = struct {
             .{ .name = "X-Title", .value = "Zig Agent" },
         };
 
+        // Reinitialize HTTP client to avoid connection state issues
+        self.client.deinit();
+        self.client = std.http.Client{ .allocator = self.allocator };
+
+        debugLog("creating HTTP request...", .{});
         var req = try self.client.request(.POST, parsed_uri, .{
             .extra_headers = &extra_headers,
         });
         defer req.deinit();
+        debugLog("HTTP request created", .{});
 
-        req.transfer_encoding = .{ .content_length = payload.len };
-        try req.sendBodyComplete(payload);
+        // Create a mutable copy of the payload (sendBodyComplete expects []u8, not []const u8)
+        const mutable_payload = try self.allocator.alloc(u8, payload.len);
+        defer self.allocator.free(mutable_payload);
+        @memcpy(mutable_payload, payload);
+
+        req.transfer_encoding = .{ .content_length = mutable_payload.len };
+        debugLog("sending body len={d}...", .{mutable_payload.len});
+        try req.sendBodyComplete(mutable_payload);
+        debugLog("body sent", .{});
 
         var redirect_buffer: [4096]u8 = undefined;
+        debugLog("waiting for response head...", .{});
         var response = try req.receiveHead(&redirect_buffer);
+        debugLog("received response head, status={d}", .{@intFromEnum(response.head.status)});
 
         if (response.head.status != .ok) {
+            debugLog("API error, non-200 status", .{});
             return error.APIError;
         }
 
@@ -148,6 +178,7 @@ pub const APIClient = struct {
         var read_buf: [16384]u8 = undefined;
         var transfer_buffer: [16384]u8 = undefined;
         const reader_ptr = response.reader(&transfer_buffer);
+        debugLog("entering read loop", .{});
 
         while (true) {
             const n = try reader_ptr.readSliceShort(&read_buf);
@@ -193,6 +224,14 @@ pub const APIClient = struct {
                             if (choice.finish_reason) |reason| {
                                 callback(.{ .finish = reason }, context);
                             }
+                        }
+
+                        // Check for usage information (sent in final chunk)
+                        if (parsed.value.usage) |usage| {
+                            callback(.{ .usage = .{
+                                .prompt_tokens = usage.prompt_tokens,
+                                .completion_tokens = usage.completion_tokens,
+                            } }, context);
                         }
                     },
                 }

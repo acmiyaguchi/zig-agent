@@ -261,6 +261,74 @@ class TestZigAgent:
 
         time.sleep(1)
 
+    @pytest.mark.skipif(
+        not os.environ.get("OPENROUTER_API_KEY"),
+        reason="OPENROUTER_API_KEY not set"
+    )
+    def test_agent_simple_question(self, tmux_session: TmuxSession, ensure_built, project_root: Path):
+        """Test that the agent responds to a simple question."""
+        binary = project_root / "zig-out" / "bin" / "zig-agent"
+        if not binary.exists():
+            pytest.skip(f"Binary not found: {binary}")
+
+        tmux_session.run(str(binary))
+        assert_text_appears(tmux_session, ">", timeout=5)
+
+        # Ask a simple question that doesn't require tools
+        tmux_session.type_text("What is 2 + 2?")
+        tmux_session.send_key("Enter")
+
+        # Wait for any response text (should get some output within 30 seconds)
+        # We're looking for any substantial text in the output area
+        time.sleep(5)  # Give it time to process
+
+        capture = tmux_session.capture()
+        # Check that we got SOME response (more than just the prompt)
+        lines_with_content = [l for l in capture.lines if l.strip() and not l.strip().startswith(">")]
+        assert len(lines_with_content) > 0, f"No response from agent. Screen:\n{capture.raw}"
+
+        # Clean up
+        tmux_session.type_text("quit")
+        tmux_session.send_key("Enter")
+
+    @pytest.mark.skipif(
+        not os.environ.get("OPENROUTER_API_KEY"),
+        reason="OPENROUTER_API_KEY not set"
+    )
+    def test_agent_tool_use(self, tmux_session: TmuxSession, ensure_built, project_root: Path):
+        """Test that the agent can use tools (list_directory)."""
+        binary = project_root / "zig-out" / "bin" / "zig-agent"
+        if not binary.exists():
+            pytest.skip(f"Binary not found: {binary}")
+
+        # Clear debug log
+        debug_log = Path("/tmp/zig-agent-debug.log")
+        if debug_log.exists():
+            debug_log.unlink()
+
+        tmux_session.run(str(binary))
+        assert_text_appears(tmux_session, ">", timeout=5)
+
+        # Ask to list the /tmp directory
+        tmux_session.type_text("List the files in /tmp directory")
+        tmux_session.send_key("Enter")
+
+        # Wait longer for tool execution (API call + tool execution)
+        time.sleep(15)
+
+        capture = tmux_session.capture()
+
+        # Check debug log if it exists
+        if debug_log.exists():
+            debug_content = debug_log.read_text()
+            print(f"Debug log:\n{debug_content}")
+
+        # Should see some output
+        assert len(capture.raw.strip()) > 50, f"Expected tool output. Screen:\n{capture.raw}"
+
+        # Clean up
+        tmux_session.send_key("C-c")
+
 
 class TestTermbox:
     """Tests for termbox2 rendering (when a termbox UI is built)."""
@@ -308,6 +376,133 @@ class TestManualTestAgent:
             timeout=10,
             message="Manual test agent did not show user prompt"
         )
+
+
+class TestManualTestUI:
+    """Tests for the manual_test_ui binary (termbox UI)."""
+
+    def test_ui_starts(self, tmux_session: TmuxSession, ensure_built, project_root: Path):
+        """Test that manual_test_ui starts and shows the UI."""
+        binary = project_root / "zig-out" / "bin" / "manual_test_ui"
+        if not binary.exists():
+            pytest.skip(f"Binary not found: {binary}")
+
+        tmux_session.run(str(binary))
+
+        # Should see the UI test header
+        assert_text_appears(
+            tmux_session,
+            "Termbox UI Test",
+            timeout=5,
+            message="UI test header not shown"
+        )
+
+    def test_ui_shows_prompt(self, tmux_session: TmuxSession, ensure_built, project_root: Path):
+        """Test that the UI shows input prompt."""
+        binary = project_root / "zig-out" / "bin" / "manual_test_ui"
+        if not binary.exists():
+            pytest.skip(f"Binary not found: {binary}")
+
+        tmux_session.run(str(binary))
+        assert_text_appears(tmux_session, ">", timeout=5)
+
+    def test_ui_typing(self, tmux_session: TmuxSession, ensure_built, project_root: Path):
+        """Test typing in the UI."""
+        binary = project_root / "zig-out" / "bin" / "manual_test_ui"
+        if not binary.exists():
+            pytest.skip(f"Binary not found: {binary}")
+
+        tmux_session.run(str(binary))
+        assert_text_appears(tmux_session, ">", timeout=5)
+
+        # Type some text
+        tmux_session.type_text("hello test")
+        time.sleep(0.3)
+
+        capture = tmux_session.capture()
+        assert capture.contains("hello test"), f"Typed text not visible:\n{capture.raw}"
+
+    def test_ui_submit_input(self, tmux_session: TmuxSession, ensure_built, project_root: Path):
+        """Test submitting input with Enter."""
+        binary = project_root / "zig-out" / "bin" / "manual_test_ui"
+        if not binary.exists():
+            pytest.skip(f"Binary not found: {binary}")
+
+        tmux_session.run(str(binary))
+        assert_text_appears(tmux_session, ">", timeout=5)
+
+        # Type and submit
+        tmux_session.type_text("test input")
+        tmux_session.send_key("Enter")
+
+        # Should see the echoed response
+        assert_text_appears(
+            tmux_session,
+            "You said: test input",
+            timeout=3,
+            message="Input was not echoed back"
+        )
+
+    def test_ui_quit_command(self, tmux_session: TmuxSession, ensure_built, project_root: Path):
+        """Test that 'quit' exits the UI."""
+        binary = project_root / "zig-out" / "bin" / "manual_test_ui"
+        if not binary.exists():
+            pytest.skip(f"Binary not found: {binary}")
+
+        tmux_session.run(str(binary))
+        assert_text_appears(tmux_session, ">", timeout=5)
+
+        tmux_session.type_text("quit")
+        tmux_session.send_key("Enter")
+
+        # Should exit - wait a bit and check if back at shell
+        time.sleep(1)
+        tmux_session.run("echo 'shell prompt'")
+        assert_text_appears(tmux_session, "shell prompt", timeout=2)
+
+    def test_ui_ctrl_c_exit(self, tmux_session: TmuxSession, ensure_built, project_root: Path):
+        """Test that Ctrl+C exits the UI."""
+        binary = project_root / "zig-out" / "bin" / "manual_test_ui"
+        if not binary.exists():
+            pytest.skip(f"Binary not found: {binary}")
+
+        tmux_session.run(str(binary))
+        assert_text_appears(tmux_session, ">", timeout=5)
+
+        tmux_session.send_key("C-c")
+
+        # Should exit - wait a bit and check if back at shell
+        time.sleep(1)
+        tmux_session.run("echo 'after ctrl-c'")
+        assert_text_appears(tmux_session, "after ctrl-c", timeout=2)
+
+    def test_ui_scrolling(self, tmux_session: TmuxSession, ensure_built, project_root: Path):
+        """Test scrolling with arrow keys."""
+        binary = project_root / "zig-out" / "bin" / "manual_test_ui"
+        if not binary.exists():
+            pytest.skip(f"Binary not found: {binary}")
+
+        tmux_session.run(str(binary))
+        assert_text_appears(tmux_session, ">", timeout=5)
+
+        # Add some content by submitting multiple inputs
+        for i in range(5):
+            tmux_session.type_text(f"line {i}")
+            tmux_session.send_key("Enter")
+            time.sleep(0.2)
+
+        # Try scrolling up
+        tmux_session.send_key("Up")
+        time.sleep(0.2)
+
+        # Try scrolling down
+        tmux_session.send_key("Down")
+        time.sleep(0.2)
+
+        # Should still be functional
+        tmux_session.type_text("after scroll")
+        capture = tmux_session.capture()
+        assert capture.contains("after scroll")
 
 
 # --- Parameterized Tests ---

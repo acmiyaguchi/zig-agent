@@ -21,6 +21,9 @@ fn streamCallback(chunk: types.StreamChunk, context: *anyopaque) void {
                 std.debug.print("\n[Finish]\n", .{});
             }
         },
+        .usage => |u| {
+            std.debug.print("\n[Usage: {d} prompt, {d} completion]\n", .{u.prompt_tokens, u.completion_tokens});
+        },
     }
 }
 

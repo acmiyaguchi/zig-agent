@@ -5,6 +5,11 @@ const agent_types = @import("agent/types.zig");
 const client = @import("api/client.zig");
 const registry = @import("tools/registry.zig");
 const read_file = @import("tools/read_file.zig");
+const list_directory = @import("tools/list_directory.zig");
+const search_files = @import("tools/search_files.zig");
+const write_file = @import("tools/write_file.zig");
+const edit_file = @import("tools/edit_file.zig");
+const run_command = @import("tools/run_command.zig");
 const agent_lib = @import("agent/agent.zig");
 const xev = @import("xev");
 const TerminalUI = @import("ui/terminal.zig").TerminalUI;
@@ -17,9 +22,13 @@ const InteractiveMode = struct {
     agent: *agent_lib.Agent,
     loop: xev.Loop,
     should_quit: bool,
+    agent_running: std.atomic.Value(bool),
 
     // Completion for TTY polling
     tty_completion: xev.Completion,
+
+    // Thread for agent execution
+    agent_thread: ?std.Thread,
 
     pub fn init(allocator: std.mem.Allocator, ui: *TerminalUI, agent: *agent_lib.Agent) !InteractiveMode {
         return InteractiveMode{
@@ -28,11 +37,17 @@ const InteractiveMode = struct {
             .agent = agent,
             .loop = try xev.Loop.init(.{}),
             .should_quit = false,
+            .agent_running = std.atomic.Value(bool).init(false),
             .tty_completion = undefined,
+            .agent_thread = null,
         };
     }
 
     pub fn deinit(self: *InteractiveMode) void {
+        // Wait for any running agent thread
+        if (self.agent_thread) |thread| {
+            thread.join();
+        }
         self.loop.deinit();
     }
 
@@ -161,17 +176,42 @@ pub fn main() !void {
     var tool_registry = registry.ToolRegistry.init(allocator);
     defer tool_registry.deinit();
 
-    // Register read_file tool
+    // Register tools
     const rf_tool = try read_file.initTool(tool_registry.arena.allocator());
     try tool_registry.register(rf_tool);
+
+    const ld_tool = try list_directory.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(ld_tool);
+
+    const sf_tool = try search_files.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(sf_tool);
+
+    const wf_tool = try write_file.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(wf_tool);
+
+    const ef_tool = try edit_file.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(ef_tool);
+
+    const rc_tool = try run_command.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(rc_tool);
 
     // Initialize terminal UI
     var ui = TerminalUI.init(allocator);
     try ui.initTermbox();
     defer ui.deinit();
 
+    // Confirmation handler wrapper
+    const confirmationHandler = struct {
+        fn handler(tool_name: []const u8, arguments: []const u8, context: *anyopaque) bool {
+            const ui_ptr: *TerminalUI = @ptrCast(@alignCast(context));
+            return ui_ptr.requestConfirmation(tool_name, arguments);
+        }
+    }.handler;
+
     // Initialize agent with terminal UI as event handler
     var agent = agent_lib.Agent.init(allocator, &api_client, &tool_registry, TerminalUI.handleAgentUpdate, &ui);
+    agent.confirmation_handler = confirmationHandler;
+    agent.confirmation_context = &ui;
     defer agent.deinit();
 
     // Initialize interactive mode with event loop
@@ -189,6 +229,12 @@ test {
     _ = @import("agent/types.zig");
     _ = @import("tools/registry.zig");
     _ = @import("tools/read_file.zig");
+    _ = @import("tools/subprocess.zig");
+    _ = @import("tools/list_directory.zig");
+    _ = @import("tools/search_files.zig");
+    _ = @import("tools/write_file.zig");
+    _ = @import("tools/edit_file.zig");
+    _ = @import("tools/run_command.zig");
     _ = @import("ui/terminal.zig");
     _ = @import("ui/termbox.zig");
 }

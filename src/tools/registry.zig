@@ -20,6 +20,7 @@ pub const Tool = struct {
     description: []const u8,
     parameters: std.json.Value,
     execute: *const fn (allocator: std.mem.Allocator, arguments: []const u8) anyerror!ToolResult,
+    requires_confirmation: bool = false,
 };
 
 pub const ToolRegistry = struct {
