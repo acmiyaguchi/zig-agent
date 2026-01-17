@@ -1,4 +1,4 @@
-# Design: Agent v2 - Subprocess Execution
+# Design: Agent v2 - Hybrid Tool Approach
 
 **Change ID**: `implement-agent-v2`
 
@@ -8,23 +8,25 @@ This document captures technical decisions, architectural patterns, and safety c
 
 V1 established a working agent loop on resource-constrained devices. V2 adds subprocess execution capabilities and basic token tracking.
 
-**Key Architectural Shift**: Instead of implementing custom Zig tools for file operations, we leverage existing Unix tools (coreutils/busybox) via subprocess execution. This is radically simpler (~200 LOC vs ~1000 LOC) and more powerful.
+**Key Architectural Shift**: Instead of implementing custom Zig tools for file operations, we use a hybrid approach: structured tool wrappers that internally call coreutils. This gives us clear interfaces, zero friction for read-only operations, and simpler implementation (~300 LOC vs ~1000 LOC custom tools).
 
 ## Goals / Non-Goals
 
 ### Goals
-- Enable file modification via standard Unix tools (cat, sed, echo, etc.)
-- Provide directory exploration (ls, find, tree)
-- Enable code search (grep)
+- Enable file modification via structured `write_file` tool
+- Provide directory exploration via `list_directory` tool
+- Enable code search via `search_files` tool
+- Provide escape hatch for arbitrary commands via `run_command`
+- Zero friction for read-only operations (no confirmations)
+- Confirmation only for destructive operations
 - Expose token/context usage to prevent surprises
 - Maintain <55MB peak memory, <500ms startup, <10MB binary
-- Trust users to evaluate command safety
 
 ### Non-Goals
-- Sandboxing/whitelisting (security theater, users run npm install anyway)
-- Custom file editing tools (use sed, cat, echo instead)
-- Custom grep implementation (use existing grep)
-- Full shell feature parity (restrictions intentional)
+- Sandboxing/whitelisting (trust users, they're on their own machines)
+- Full Zig reimplementation of file tools (wrap coreutils instead)
+- Confirmation for read-only operations (safe by default)
+- Full shell feature parity (run_command provides escape hatch)
 - Persistent configuration (use defaults, override via CLI)
 - Multi-turn context pruning (v2.1)
 - Real-time output streaming (v2.1)
@@ -32,79 +34,146 @@ V1 established a working agent loop on resource-constrained devices. V2 adds sub
 
 ## Technical Decisions
 
-### Decision 1: Single run_command Tool vs Multiple Custom Tools
+### Decision 1: Hybrid Approach - Structured Tools + Escape Hatch
 
-**Choice**: Implement single `run_command` tool that spawns subprocesses
+**Choice**: Implement structured tool wrappers (list_directory, search_files, write_file) that internally call coreutils, plus general run_command escape hatch
 
 **Alternatives Considered**:
 1. Custom Zig tools (`write_file`, `edit_file`, `list_directory`, `grep_files`) - ~1000 LOC, reimplements existing functionality
-2. Single subprocess spawner - ~200 LOC, leverages battle-tested tools
-3. Hybrid approach (some custom, some subprocess) - unnecessary complexity
+2. Single subprocess spawner only - ~200 LOC but no structure, every operation needs shell syntax
+3. Hybrid approach (structured wrappers + escape hatch) - **CHOSEN** - ~300 LOC, best of both worlds
 
 **Rationale**:
-- Unix tools already exist and work perfectly (ls, cat, grep, sed, find, etc.)
-- Model already knows how to use these tools
-- Users are familiar with these tools
+- Structured tools provide clear, typed interfaces for common operations
+- Read-only tools (list_directory, search_files) have zero friction - no confirmations
+- Internally wrapping coreutils means battle-tested implementations
+- Model gets familiar tool names without needing to construct shell commands
+- run_command provides escape hatch for anything else
 - Smaller binary size (no custom file manipulation code)
 - Fewer bugs to fix (we rely on coreutils, not our implementations)
-- More powerful (full shell available via `bash -c "..."`)
 
 **Implementation**:
+
+Each tool is a thin wrapper that builds a shell command and calls shared subprocess spawner:
+
 ```zig
-// run_command: Execute shell command with timeout and output capture
+// list_directory: Wraps `ls -la {path}`
+pub fn executeListDirectory(allocator: Allocator, args: std.json.Value) !ToolResult {
+    const path = args.object.get("path").?.string;
+    const recursive = if (args.object.get("recursive")) |r| r.bool else false;
+
+    // Build shell command
+    const command = if (recursive)
+        try std.fmt.allocPrint(allocator, "ls -laR {s}", .{path})
+    else
+        try std.fmt.allocPrint(allocator, "ls -la {s}", .{path});
+    defer allocator.free(command);
+
+    // Use shared subprocess spawner
+    return subprocess.execute(allocator, command, 5, null);
+}
+
+// search_files: Wraps `grep -rn '{pattern}' {path}`
+pub fn executeSearchFiles(allocator: Allocator, args: std.json.Value) !ToolResult {
+    const pattern = args.object.get("pattern").?.string;
+    const path = args.object.get("path").?.string;
+
+    const command = try std.fmt.allocPrint(allocator, "grep -rn '{s}' {s}", .{pattern, path});
+    defer allocator.free(command);
+
+    return subprocess.execute(allocator, command, 5, null);
+}
+
+// write_file: Wraps `cat > {path} <<'EOF'\n{content}\nEOF`
+pub fn executeWriteFile(allocator: Allocator, args: std.json.Value) !ToolResult {
+    const path = args.object.get("path").?.string;
+    const content = args.object.get("content").?.string;
+
+    const command = try std.fmt.allocPrint(
+        allocator,
+        "cat > {s} <<'EOF'\n{s}\nEOF",
+        .{path, content}
+    );
+    defer allocator.free(command);
+
+    return subprocess.execute(allocator, command, 5, null);
+}
+
+// run_command: General escape hatch
 pub fn executeRunCommand(allocator: Allocator, args: std.json.Value) !ToolResult {
     const command = args.object.get("command").?.string;
     const timeout_secs = if (args.object.get("timeout")) |t| t.integer else 5;
     const working_dir = if (args.object.get("working_dir")) |wd| wd.string else null;
 
-    // 1. Spawn subprocess using std.process
-    var child = std.process.Child.init(&[_][]const u8{ "/bin/sh", "-c", command }, allocator);
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
-    if (working_dir) |wd| child.cwd = wd;
-
-    // 2. Start and wait with timeout
-    try child.spawn();
-    const result = try waitWithTimeout(&child, timeout_secs);
-
-    // 3. Capture output (stdout + stderr combined)
-    const stdout = try child.stdout.?.readToEndAlloc(allocator, 1024 * 1024); // 1MB cap
-    const stderr = try child.stderr.?.readToEndAlloc(allocator, 1024 * 1024);
-
-    // 4. Format output
-    var output = std.ArrayList(u8).init(allocator);
-    if (stdout.len > 0) try output.appendSlice(stdout);
-    if (stderr.len > 0) {
-        try output.appendSlice("\n--- stderr ---\n");
-        try output.appendSlice(stderr);
-    }
-
-    // 5. Return based on exit code
-    const exit_code = result.exit_code;
-    return ToolResult{
-        .success = exit_code == 0,
-        .output = output.items,
-        .error_message = if (exit_code != 0)
-            try std.fmt.allocPrint(allocator, "Command failed with exit code {d}", .{exit_code})
-        else null,
-    };
+    return subprocess.execute(allocator, command, timeout_secs, working_dir);
 }
 ```
 
 **Trade-offs**:
-- Security: No sandboxing, user responsible for safe commands
-- Trust: Requires trusting user to evaluate command safety
-- Confirmation overhead: Every command requires Y/n approval
+- Slightly more code than single run_command (~300 LOC vs ~200 LOC)
+- More tools to register and maintain
+- But: much clearer interfaces, zero friction for read-only ops
 
 **Trade-off Justification**:
-- Users are developers on their own machines
-- They already run arbitrary commands (npm install, cargo build, etc.)
-- Confirmation prompt provides visibility before execution
-- Simpler implementation means fewer bugs
+- Read-only workflows (explore, search, read) have zero friction
+- Model doesn't need to know shell syntax for common operations
+- Structured tools are easier to test and reason about
+- Still have full power via run_command escape hatch
 
 ---
 
-### Decision 2: No Sandboxing - Trust the User
+### Decision 2: Confirmation Only for Destructive Operations
+
+**Choice**: Read-only tools (read_file, list_directory, search_files) require NO confirmation. Destructive tools (write_file, run_command) require Y/n confirmation.
+
+**Alternatives Considered**:
+1. Confirmation for all tools - too much friction, slows down read-only workflows
+2. No confirmation for any tools - risky for destructive operations
+3. Confirmation only for destructive tools - **CHOSEN** - balanced approach
+
+**Rationale**:
+- Reading files, listing directories, and searching are inherently safe operations
+- Writing files and running arbitrary commands can be destructive
+- Zero friction for exploration and analysis workflows
+- Safety guard for operations that modify state
+
+**Implementation**:
+```zig
+pub fn executeTool(self: *Agent, tool_name: []const u8, args: std.json.Value) !ToolResult {
+    const tool = self.registry.lookup(tool_name) orelse return error.ToolNotFound;
+
+    // Check if tool requires confirmation
+    const requires_confirmation = std.mem.eql(u8, tool_name, "write_file") or
+                                  std.mem.eql(u8, tool_name, "run_command");
+
+    if (requires_confirmation) {
+        const confirmed = try self.ui.requestConfirmation(tool_name, args);
+        if (!confirmed) {
+            return ToolResult{
+                .success = false,
+                .output = "",
+                .error_message = "Operation cancelled by user",
+            };
+        }
+    }
+
+    // Execute tool
+    return tool.execute(self.allocator, args);
+}
+```
+
+**Trade-offs**:
+- More complex logic to determine which tools need confirmation
+- Need to maintain list of destructive tools
+
+**Trade-off Justification**:
+- Read-only workflows are the most common (explore, search, analyze)
+- Zero friction for safe operations dramatically improves UX
+- Destructive operations still have safety guard
+
+---
+
+### Decision 3: No Sandboxing - Trust the User
 
 **Choice**: No whitelist, no sandboxing, no restrictions on commands
 
@@ -138,7 +207,7 @@ pub fn executeRunCommand(allocator: Allocator, args: std.json.Value) !ToolResult
 
 ---
 
-### Decision 3: Inline Y/n Confirmation (Not Modal)
+### Decision 4: Inline Y/n Confirmation (Not Modal)
 
 **Choice**: Use inline text prompt for confirmation, not modal dialog
 
@@ -176,7 +245,7 @@ pub fn requestConfirmation(self: *TerminalUI, message: []const u8) bool {
 
 ---
 
-### Decision 4: Timeout Handling with Configurable Default
+### Decision 5: Timeout Handling with Configurable Default
 
 **Choice**: 5-second default timeout, configurable via parameter
 
@@ -219,7 +288,7 @@ fn waitWithTimeout(child: *std.process.Child, timeout_secs: i64) !ExitResult {
 
 ---
 
-### Decision 5: Output Capture with 1MB Cap
+### Decision 6: Output Capture with 1MB Cap
 
 **Choice**: Buffer output up to 1MB, return truncation warning if exceeded
 
@@ -248,7 +317,7 @@ if (stdout.len >= MAX_OUTPUT or stderr.len >= MAX_OUTPUT) {
 
 ---
 
-### Decision 6: Token Tracking - Use OpenRouter's Usage Field
+### Decision 7: Token Tracking - Use OpenRouter's Usage Field
 
 **Choice**: Parse usage data from OpenRouter API responses, display in status line
 
@@ -325,7 +394,7 @@ pub fn renderStatusLine(self: *TerminalUI, tokens: u32) void {
 
 ---
 
-### Decision 7: Memory Budget for Subprocess Buffers
+### Decision 8: Memory Budget for Subprocess Buffers
 
 **Choice**: Allocate ~1MB for subprocess output buffers
 
@@ -351,8 +420,10 @@ pub fn renderStatusLine(self: *TerminalUI, tokens: u32) void {
 
 | Decision | Risk | Mitigation |
 |----------|------|------------|
-| No sandboxing | Dangerous commands executed | Confirmation prompt shows full command |
-| Single subprocess tool | Less specialized than custom tools | Unix tools are more powerful and familiar |
+| No sandboxing | Dangerous commands executed | Confirmation prompt for destructive tools |
+| Hybrid approach | More tools to maintain | Each tool is simple wrapper (~20-30 LOC) |
+| No confirmation for read-only | None - safe by design | Read-only ops can't modify state |
+| Confirmation for destructive | One extra keystroke | Only applies to write_file, run_command |
 | 5s timeout | Some operations may time out | Configurable timeout parameter |
 | 1MB output cap | Large outputs truncated | Users redirect to file (`> output.txt`) |
 | Simple token counter | No limit warnings | Users track manually; percentage in v2.1 |
@@ -379,6 +450,7 @@ pub fn renderStatusLine(self: *TerminalUI, tokens: u32) void {
 
 ## References
 
+- [tool-expansion spec](specs/tool-expansion/spec.md)
 - [subprocess-execution spec](specs/subprocess-execution/spec.md)
 - [context-tracking spec](specs/context-tracking/spec.md)
 - [API client reference](../../../../src/api/client.zig)

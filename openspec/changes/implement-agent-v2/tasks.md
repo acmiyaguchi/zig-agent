@@ -6,71 +6,90 @@
 
 Implementation organized into 4 phases. Complete each section sequentially; mark items `[x]` when finished.
 
-**Realistic Estimate**: 5-7 days (much simpler than custom tools approach!)
+**Realistic Estimate**: 5-7 days (simpler than custom tools approach!)
 
 ---
 
-## Phase 1: Subprocess Spawner (2-3 days)
+## Phase 1: Tool Wrappers (2-3 days)
 
-### 1.1 run_command Tool Core
-- [ ] 1.1.1 Create `src/tools/run_command.zig` module
-- [ ] 1.1.2 Implement tool schema (command: string, timeout?: int, working_dir?: string)
-- [ ] 1.1.3 Implement `executeRunCommand()` function
-- [ ] 1.1.4 Use `std.process.Child.init()` to create subprocess
-- [ ] 1.1.5 Configure subprocess with `/bin/sh -c` to support shell features
-- [ ] 1.1.6 Set stdout_behavior = .Pipe and stderr_behavior = .Pipe
+### 1.1 Shared Subprocess Infrastructure
+- [ ] 1.1.1 Create `src/tools/subprocess.zig` module
+- [ ] 1.1.2 Implement `execute(allocator, command, timeout, working_dir)` function
+- [ ] 1.1.3 Use `std.process.Child.init()` to create subprocess
+- [ ] 1.1.4 Configure subprocess with `/bin/sh -c` to support shell features
+- [ ] 1.1.5 Set stdout_behavior = .Pipe and stderr_behavior = .Pipe
+- [ ] 1.1.6 Implement `waitWithTimeout()` helper function
+- [ ] 1.1.7 Capture stdout with `readToEndAlloc(allocator, 1MB)`
+- [ ] 1.1.8 Capture stderr with `readToEndAlloc(allocator, 1MB)`
+- [ ] 1.1.9 Combine stdout + stderr in output (separate with "--- stderr ---")
+- [ ] 1.1.10 Add truncation warning if output exceeds 1MB
+- [ ] 1.1.11 Capture exit code and set ToolResult.success appropriately
+- [ ] 1.1.12 Return timeout error if command exceeds timeout
 
-### 1.2 Output Capture
-- [ ] 1.2.1 Capture stdout with `readToEndAlloc(allocator, 1MB)`
-- [ ] 1.2.2 Capture stderr with `readToEndAlloc(allocator, 1MB)`
-- [ ] 1.2.3 Combine stdout + stderr in output (separate with "--- stderr ---")
-- [ ] 1.2.4 Add truncation warning if output exceeds 1MB
-- [ ] 1.2.5 Return full output to model
+### 1.2 list_directory Tool (Read-Only)
+- [ ] 1.2.1 Create `src/tools/list_directory.zig` module
+- [ ] 1.2.2 Implement tool schema (path: string, recursive?: bool)
+- [ ] 1.2.3 Implement `executeListDirectory()` function
+- [ ] 1.2.4 Build shell command: `ls -la {path}` or `ls -laR {path}` if recursive
+- [ ] 1.2.5 Call `subprocess.execute()` with 5s timeout
+- [ ] 1.2.6 Return result to model
+- [ ] 1.2.7 Add unit tests (simple listing, recursive, non-existent path)
 
-### 1.3 Timeout Handling
-- [ ] 1.3.1 Implement `waitWithTimeout()` helper function
-- [ ] 1.3.2 Default timeout to 5 seconds if not specified
-- [ ] 1.3.3 Poll subprocess with `child.tryWait()` in loop
-- [ ] 1.3.4 Track elapsed time and kill process if timeout exceeded
-- [ ] 1.3.5 Return timeout error to model if command times out
+### 1.3 search_files Tool (Read-Only)
+- [ ] 1.3.1 Create `src/tools/search_files.zig` module
+- [ ] 1.3.2 Implement tool schema (pattern: string, path: string)
+- [ ] 1.3.3 Implement `executeSearchFiles()` function
+- [ ] 1.3.4 Build shell command: `grep -rn '{pattern}' {path}`
+- [ ] 1.3.5 Escape single quotes in pattern for shell safety
+- [ ] 1.3.6 Call `subprocess.execute()` with 5s timeout
+- [ ] 1.3.7 Return result to model
+- [ ] 1.3.8 Add unit tests (pattern found, pattern not found, invalid path)
 
-### 1.4 Exit Code Handling
-- [ ] 1.4.1 Capture exit code from subprocess termination
-- [ ] 1.4.2 Set ToolResult.success = true if exit code == 0
-- [ ] 1.4.3 Set ToolResult.success = false if exit code != 0
-- [ ] 1.4.4 Include exit code in error message for failures
-- [ ] 1.4.5 Return both output and exit status to model
+### 1.4 write_file Tool (Destructive)
+- [ ] 1.4.1 Create `src/tools/write_file.zig` module
+- [ ] 1.4.2 Implement tool schema (path: string, content: string)
+- [ ] 1.4.3 Implement `executeWriteFile()` function
+- [ ] 1.4.4 Build shell command: `cat > {path} <<'EOF'\n{content}\nEOF`
+- [ ] 1.4.5 Call `subprocess.execute()` with 5s timeout
+- [ ] 1.4.6 Return result to model
+- [ ] 1.4.7 Add unit tests (create new file, overwrite existing, write to invalid path)
 
-### 1.5 Tool Registry Integration
-- [ ] 1.5.1 Add `registerRunCommand()` method to ToolRegistry
-- [ ] 1.5.2 Call `registerRunCommand()` in `ToolRegistry.init()`
-- [ ] 1.5.3 Verify tool appears in registry (read_file + run_command)
+### 1.5 run_command Tool (Destructive)
+- [ ] 1.5.1 Create `src/tools/run_command.zig` module
+- [ ] 1.5.2 Implement tool schema (command: string, timeout?: int, working_dir?: string)
+- [ ] 1.5.3 Implement `executeRunCommand()` function
+- [ ] 1.5.4 Extract parameters (default timeout=5s)
+- [ ] 1.5.5 Call `subprocess.execute()` with provided parameters
+- [ ] 1.5.6 Return result to model
+- [ ] 1.5.7 Add unit tests (successful command, failed command, timeout, working_dir)
 
-### 1.6 Unit Tests
-- [ ] 1.6.1 Test successful command execution (`echo "hello"`)
-- [ ] 1.6.2 Test command with non-zero exit code (`false`)
-- [ ] 1.6.3 Test timeout handling (sleep 10 with 1s timeout)
-- [ ] 1.6.4 Test output capture (stdout + stderr)
-- [ ] 1.6.5 Test output truncation (command with > 1MB output)
-- [ ] 1.6.6 Test working directory parameter
+### 1.6 Tool Registry Integration
+- [ ] 1.6.1 Add `registerListDirectory()` method to ToolRegistry
+- [ ] 1.6.2 Add `registerSearchFiles()` method to ToolRegistry
+- [ ] 1.6.3 Add `registerWriteFile()` method to ToolRegistry
+- [ ] 1.6.4 Add `registerRunCommand()` method to ToolRegistry
+- [ ] 1.6.5 Call all registration methods in `ToolRegistry.init()`
+- [ ] 1.6.6 Verify 5 tools in registry (read_file, list_directory, search_files, write_file, run_command)
 
 ---
 
 ## Phase 2: Confirmation UI (1 day)
 
 ### 2.1 Inline Y/n Confirmation
-- [ ] 2.1.1 Add `requestConfirmation(message: []const u8) bool` to TerminalUI
-- [ ] 2.1.2 Display inline prompt: "Execute: <command>? [Y/n] "
-- [ ] 2.1.3 Handle keypresses (Y/y to confirm, N/n/Enter to deny)
-- [ ] 2.1.4 Return boolean result to caller
-- [ ] 2.1.5 Clear prompt line after response
+- [ ] 2.1.1 Add `requestConfirmation(tool_name: []const u8, args: std.json.Value) bool` to TerminalUI
+- [ ] 2.1.2 Display inline prompt: "Execute <tool_name> <preview>? [Y/n] "
+- [ ] 2.1.3 Format preview based on tool (write_file shows path, run_command shows command)
+- [ ] 2.1.4 Handle keypresses (Y/y to confirm, N/n/Enter to deny)
+- [ ] 2.1.5 Return boolean result to caller
+- [ ] 2.1.6 Clear prompt line after response
 
 ### 2.2 Agent Integration
-- [ ] 2.2.1 Before executing `run_command`: call confirmation prompt
-- [ ] 2.2.2 Show full command to user in prompt
-- [ ] 2.2.3 Only execute command if user confirms (Y/y)
-- [ ] 2.2.4 Return cancellation message to model if user denies
-- [ ] 2.2.5 Note: read_file does NOT require confirmation (read-only)
+- [ ] 2.2.1 Add helper to identify destructive tools (write_file, run_command)
+- [ ] 2.2.2 Before executing destructive tool: call confirmation prompt
+- [ ] 2.2.3 Show tool name and relevant args to user in prompt
+- [ ] 2.2.4 Only execute tool if user confirms (Y/y)
+- [ ] 2.2.5 Return cancellation message to model if user denies
+- [ ] 2.2.6 Ensure read-only tools (read_file, list_directory, search_files) skip confirmation
 
 ---
 
@@ -102,35 +121,37 @@ Implementation organized into 4 phases. Complete each section sequentially; mark
 ## Phase 4: Integration & Testing (1 day)
 
 ### 4.1 End-to-End Scenario Testing
-- [ ] 4.1.1 Scenario: List directory
+- [ ] 4.1.1 Scenario: List directory (no confirmation)
          - [ ] User asks agent to list current directory
-         - [ ] Agent uses run_command("ls -la")
-         - [ ] User confirms with Y
+         - [ ] Agent uses list_directory(path=".")
+         - [ ] Tool executes immediately (no confirmation)
          - [ ] Output shows directory contents
-- [ ] 4.1.2 Scenario: Read file
+- [ ] 4.1.2 Scenario: Search files (no confirmation)
+         - [ ] User asks to find pattern in files
+         - [ ] Agent uses search_files(pattern="foo", path=".")
+         - [ ] Tool executes immediately (no confirmation)
+         - [ ] Search results displayed
+- [ ] 4.1.3 Scenario: Read file (no confirmation)
          - [ ] User asks agent to read a file
-         - [ ] Agent uses run_command("cat /path/to/file")
-         - [ ] User confirms with Y
+         - [ ] Agent uses read_file(path="/path/to/file")
+         - [ ] Tool executes immediately (no confirmation)
          - [ ] File contents displayed
-- [ ] 4.1.3 Scenario: Create new file
+- [ ] 4.1.4 Scenario: Create new file (requires confirmation)
          - [ ] User asks agent to create a file
-         - [ ] Agent uses run_command("echo 'content' > file.txt")
+         - [ ] Agent uses write_file(path="test.txt", content="hello")
+         - [ ] User sees prompt: "Execute write_file test.txt? [Y/n]"
          - [ ] User confirms with Y
          - [ ] File created successfully
-- [ ] 4.1.4 Scenario: Edit existing file
-         - [ ] User asks agent to modify a line
-         - [ ] Agent uses run_command("sed -i 's/old/new/' file.txt")
+- [ ] 4.1.5 Scenario: Run arbitrary command (requires confirmation)
+         - [ ] User asks agent to run custom command
+         - [ ] Agent uses run_command(command="echo 'test'")
+         - [ ] User sees prompt: "Execute run_command echo 'test'? [Y/n]"
          - [ ] User confirms with Y
-         - [ ] File modified successfully
-- [ ] 4.1.5 Scenario: Search files
-         - [ ] User asks to find pattern in files
-         - [ ] Agent uses run_command("grep -rn 'pattern' .")
-         - [ ] User confirms with Y
-         - [ ] Search results displayed
-- [ ] 4.1.6 Scenario: Deny command execution
-         - [ ] Agent proposes run_command
+         - [ ] Command executes successfully
+- [ ] 4.1.6 Scenario: Deny destructive operation
+         - [ ] Agent proposes write_file or run_command
          - [ ] User denies with N
-         - [ ] Command NOT executed
+         - [ ] Operation NOT executed
          - [ ] Agent receives cancellation and continues
 - [ ] 4.1.7 Scenario: Command timeout
          - [ ] Agent runs command that takes > timeout
@@ -161,12 +182,16 @@ Implementation organized into 4 phases. Complete each section sequentially; mark
 ## Summary of Files to Create/Modify
 
 ### New Files
-- `src/tools/run_command.zig`
+- `src/tools/subprocess.zig` - Shared subprocess spawner
+- `src/tools/list_directory.zig` - List directory tool
+- `src/tools/search_files.zig` - Search files tool
+- `src/tools/write_file.zig` - Write file tool
+- `src/tools/run_command.zig` - General command escape hatch
 
 ### Modified Files
-- `src/agent/agent.zig` - Add token tracking fields
+- `src/agent/agent.zig` - Add token tracking fields, destructive tool check
 - `src/api/client.zig` - Add usage parsing
-- `src/tools/registry.zig` - Add registration for run_command
+- `src/tools/registry.zig` - Add registration for 4 new tools
 - `src/ui/terminal.zig` - Add status line, inline Y/n prompts
 
 ### Files Left Unchanged
@@ -205,13 +230,13 @@ Implementation organized into 4 phases. Complete each section sequentially; mark
 **Original Design (Rejected)**:
 - 72 tasks across 4 phases
 - 7-10 days estimated
-- ~1000 LOC for custom tools
-- 3 new tool modules (write_file, edit_file, list_directory)
+- ~1000 LOC for custom Zig tools
+- 3 new tool modules with full Zig implementations
 
 **New Design (This Proposal)**:
-- ~15 core tasks across 4 phases
+- ~40 tasks across 4 phases
 - 5-7 days estimated
-- ~200 LOC for subprocess spawner
-- 1 new tool module (run_command)
+- ~300 LOC for tool wrappers + subprocess spawner
+- 5 new tool modules (4 wrappers + 1 escape hatch)
 
-**Savings**: ~57 fewer tasks, ~800 fewer LOC, 2-3 days faster, simpler architecture!
+**Savings**: ~32 fewer tasks, ~700 fewer LOC, 2-3 days faster, simpler implementation with zero friction for read-only ops!

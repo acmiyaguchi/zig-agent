@@ -1,4 +1,4 @@
-# Spec Delta: Subprocess Execution
+# Spec Delta: Subprocess Execution - Shared Infrastructure
 
 **Capability**: `subprocess-execution`
 **Change**: `implement-agent-v2`
@@ -6,93 +6,97 @@
 
 ## Purpose
 
-Add subprocess execution capabilities via a single `run_command` tool, enabling the model to leverage existing Unix tools (coreutils/busybox) instead of custom Zig implementations. This transforms the agent from read-only to fully capable of file manipulation, code search, and directory exploration using familiar command-line tools.
+Provide shared subprocess spawner infrastructure used internally by all new tools (list_directory, search_files, write_file, run_command). This module handles the common concerns of spawning processes, capturing output, enforcing timeouts, and managing exit codes.
 
 ## Context
 
-V1 had only `read_file`. V2 adds subprocess execution with:
-- Single `run_command` tool that spawns subprocesses
+V1 had only `read_file` (pure Zig implementation). V2 adds multiple tools that wrap coreutils:
+- Shared subprocess spawner (`src/tools/subprocess.zig`)
+- Used internally by list_directory, search_files, write_file, run_command
 - Timeout handling (default 5s, configurable)
-- Output capture (stdout + stderr)
+- Output capture (stdout + stderr combined)
 - Exit code handling
-- User confirmation for all commands
+- 1MB output cap
 
-**Architectural Insight**: Why reimplement `ls`, `grep`, `cat`, `sed` in Zig when they already exist and work perfectly? This approach leverages battle-tested tools, reduces code complexity (~200 LOC vs ~1000 LOC), and provides more power (full shell via `bash -c`).
+**Architectural Insight**: Instead of each tool reimplementing subprocess logic, we centralize it in one place. Each tool wrapper is just ~20-30 LOC that builds a command string and calls `subprocess.execute()`.
 
 ## ADDED Requirements
 
-### Requirement: Tool system shall support run_command tool
+### Requirement: Subprocess module shall provide shared execute function
 
 **Priority**: Critical
-**Rationale**: Subprocess execution is the core capability enabling all file operations
+**Rationale**: Centralized subprocess spawning used by all tool wrappers
 
-The Tool Registry SHALL provide `run_command` tool with:
+The subprocess module (`src/tools/subprocess.zig`) SHALL provide:
+- Function: `execute(allocator, command, timeout_secs, working_dir)`
 - Parameters:
-  - `command` (string, required): Shell command to execute
-  - `timeout` (int, optional): Timeout in seconds (default: 5)
-  - `working_dir` (string, optional): Working directory (default: current)
+  - `allocator` (Allocator): Memory allocator
+  - `command` (string): Shell command to execute
+  - `timeout_secs` (int): Timeout in seconds
+  - `working_dir` (optional string): Working directory (null = current)
 - Behavior: Spawn subprocess using `/bin/sh -c`, capture output, return exit code
 - Output: Combined stdout + stderr (separated with "--- stderr ---" marker)
 - Size limit: Cap output at 1MB (return truncation warning if exceeded)
 - Timeout: Kill process if execution exceeds timeout
 - Exit code: Return success=true if exit code 0, false otherwise
+- Used internally by: list_directory, search_files, write_file, run_command
 
 #### Scenario: Execute simple command
 
 ```zig
-// Agent receives: run_command(command="ls -la")
+// Tool wrapper calls: subprocess.execute(allocator, "ls -la", 5, null)
 // Expected result:
 // - Subprocess spawned: /bin/sh -c "ls -la"
 // - Output captured: directory listing
-// - Tool returns: { success: true, output: "[directory listing]" }
+// - Returns: { success: true, output: "[directory listing]" }
 ```
 
 #### Scenario: Execute command with timeout
 
 ```zig
-// Agent receives: run_command(command="sleep 10", timeout=1)
+// Tool wrapper calls: subprocess.execute(allocator, "sleep 10", 1, null)
 // Expected result:
 // - Subprocess spawned
 // - Process killed after 1 second
-// - Tool returns: { success: false, error_message: "Command timed out after 1s" }
+// - Returns: { success: false, error_message: "Command timed out after 1s" }
 ```
 
 #### Scenario: Command fails with non-zero exit code
 
 ```zig
-// Agent receives: run_command(command="grep 'nonexistent' /missing/file")
+// Tool wrapper calls: subprocess.execute(allocator, "grep 'pattern' /missing/file", 5, null)
 // Expected result:
 // - Command executed
-// - Exit code: 2 (grep no match + error)
-// - Tool returns: { success: false, output: "stderr output", error_message: "Command failed with exit code 2" }
+// - Exit code: 2 (grep error)
+// - Returns: { success: false, output: "stderr output", error_message: "Command failed with exit code 2" }
 ```
 
 #### Scenario: Command with large output
 
 ```zig
-// Agent receives: run_command(command="find / -type f")
+// Tool wrapper calls: subprocess.execute(allocator, "find / -type f", 30, null)
 // Expected result:
 // - Output captured up to 1MB
-// - Tool returns: { success: true, output: "[first 1MB of results]\n[Output truncated at 1MB limit]" }
+// - Returns: { success: true, output: "[first 1MB of results]\n[Output truncated at 1MB limit]" }
 ```
 
 #### Scenario: Working directory parameter
 
 ```zig
-// Agent receives: run_command(command="ls", working_dir="/home/user/project")
+// Tool wrapper calls: subprocess.execute(allocator, "pwd", 5, "/tmp")
 // Expected result:
-// - Command executed in /home/user/project
-// - Output: files in that directory
+// - Command executed in /tmp
+// - Output: /tmp
 ```
 
 ---
 
-### Requirement: run_command shall capture both stdout and stderr
+### Requirement: Subprocess spawner shall capture both stdout and stderr
 
 **Priority**: High
-**Rationale**: Models need to see error messages to debug command failures
+**Rationale**: Tools need to see error messages to report failures accurately
 
-The run_command tool SHALL:
+The subprocess spawner SHALL:
 - Capture stdout using pipe
 - Capture stderr using pipe
 - Combine outputs with "--- stderr ---" separator if both present
@@ -102,85 +106,78 @@ The run_command tool SHALL:
 #### Scenario: Command with stdout only
 
 ```
-Agent receives: run_command(command="echo 'hello'")
+subprocess.execute(allocator, "echo 'hello'", 5, null)
 
-Tool output:
+Output:
 hello
 
-Tool returns: { success: true, output: "hello\n" }
+Returns: { success: true, output: "hello\n" }
 ```
 
 #### Scenario: Command with stderr only
 
 ```
-Agent receives: run_command(command="ls /nonexistent 2>&1")
+subprocess.execute(allocator, "ls /nonexistent", 5, null)
 
-Tool output:
+Output:
+--- stderr ---
 ls: cannot access '/nonexistent': No such file or directory
 
-Tool returns: { success: false, output: "ls: cannot access '/nonexistent': No such file or directory\n", error_message: "Command failed with exit code 2" }
+Returns: { success: false, output: "[above]", error_message: "Command failed with exit code 2" }
 ```
 
 #### Scenario: Command with both stdout and stderr
 
 ```
-Agent receives: run_command(command="grep 'pattern' file1.txt file2.txt")
+subprocess.execute(allocator, "grep 'pattern' file1.txt file2.txt", 5, null)
 (where file1.txt exists but file2.txt doesn't)
 
-Tool output:
+Output:
 file1.txt:matching line
 
 --- stderr ---
 grep: file2.txt: No such file or directory
 
-Tool returns: { success: false, output: "[above]", error_message: "Command failed with exit code 2" }
+Returns: { success: false, output: "[above]", error_message: "Command failed with exit code 2" }
 ```
 
 ---
 
-### Requirement: Subprocess execution requires user confirmation
+### Requirement: Subprocess spawner is internal infrastructure
 
-**Priority**: High
-**Rationale**: User must approve commands before execution for safety
+**Priority**: Medium
+**Rationale**: Subprocess spawner is implementation detail, not user-facing
 
-Before executing `run_command`, the system SHALL:
-- Pause agent execution
-- Display inline confirmation prompt with full command
-- Wait for user keypress (Y/y to confirm, N/n/Enter to cancel)
-- Only execute if user approves
-- Cancel operation if user denies, return error to model
+The subprocess spawner SHALL:
+- Be a pure function with no side effects (except subprocess execution)
+- Not interact with UI or confirmation system
+- Be called by tool wrappers after any confirmation logic
+- Return results to caller (tool wrapper)
+- Be testable in isolation
 
-**Note**: `read_file` does NOT require confirmation (read-only tool).
+**Note**: Confirmation logic lives in the agent, not in subprocess spawner. Tool wrappers simply call subprocess.execute() and return the result.
 
-#### Scenario: User confirms command
-
-```
-Agent receives: run_command(command="echo 'hello' > test.txt")
-
-UI shows inline prompt:
-Execute: echo 'hello' > test.txt? [Y/n]
-
-User presses Y:
-- Command executed
-- Tool returns: { success: true, output: "" }
-
-User presses N:
-- Command NOT executed
-- Tool returns: { success: false, error_message: "Operation cancelled by user" }
-```
-
-#### Scenario: User denies command
+#### Scenario: Tool wrapper uses subprocess spawner
 
 ```
-Agent receives: run_command(command="rm -rf /important/data")
+// Tool wrapper (write_file.zig):
+pub fn executeWriteFile(allocator: Allocator, args: std.json.Value) !ToolResult {
+    const path = args.object.get("path").?.string;
+    const content = args.object.get("content").?.string;
 
-UI shows inline prompt:
-Execute: rm -rf /important/data? [Y/n]
+    // Build command
+    const command = try std.fmt.allocPrint(
+        allocator,
+        "cat > {s} <<'EOF'\n{s}\nEOF",
+        .{path, content}
+    );
+    defer allocator.free(command);
 
-User presses N:
-- Command NOT executed
-- Tool returns: { success: false, error_message: "Operation cancelled by user" }
-- Model receives error and can respond appropriately
+    // Call subprocess spawner (no confirmation logic here)
+    return subprocess.execute(allocator, command, 5, null);
+}
+
+// Confirmation happens in agent before calling executeWriteFile()
 ```
 
 ---
@@ -223,7 +220,7 @@ The run_command tool SHALL:
 
 ---
 
-### Requirement: run_command shall use /bin/sh for shell features
+### Requirement: Subprocess spawner shall use /bin/sh for shell features
 
 **Priority**: Medium
 **Rationale**: Enable pipes, redirection, globbing, and other shell features
@@ -236,28 +233,28 @@ The run_command tool SHALL:
 #### Scenario: Command with pipes
 
 ```zig
-// Agent receives: run_command(command="cat file.txt | grep 'pattern' | wc -l")
+// subprocess.execute(allocator, "cat file.txt | grep 'pattern' | wc -l", 5, null)
 // Expected: Shell processes pipe, returns line count
 ```
 
 #### Scenario: Command with redirection
 
 ```zig
-// Agent receives: run_command(command="echo 'content' > newfile.txt")
+// subprocess.execute(allocator, "echo 'content' > newfile.txt", 5, null)
 // Expected: Shell creates file with content
 ```
 
 #### Scenario: Command with globbing
 
 ```zig
-// Agent receives: run_command(command="ls *.txt")
+// subprocess.execute(allocator, "ls *.txt", 5, null)
 // Expected: Shell expands glob, lists matching files
 ```
 
 #### Scenario: Complex shell command
 
 ```zig
-// Agent receives: run_command(command="bash -c 'for f in *.txt; do wc -l $f; done'")
+// subprocess.execute(allocator, "for f in *.txt; do wc -l $f; done", 5, null)
 // Expected: Shell executes loop, returns line counts for all .txt files
 ```
 
@@ -265,148 +262,122 @@ The run_command tool SHALL:
 
 ## MODIFIED Requirements
 
-### Requirement: Agent shall execute tools when requested by model
-
-**Priority**: Critical (Modified)
-**Rationale**: Extended to support subprocess execution with confirmation
-
-The Agent SHALL:
-- Execute read-only tools immediately when requested by model (read_file)
-- Request user confirmation for subprocess execution (run_command)
-- Extract tool call ID, name, and arguments from API response
-- Look up tool in registry by name
-- Parse arguments JSON
-- Capture result (success, output, error)
-- Format result as tool message
-- Append to conversation
-- Call API again with tool results
-
-#### Scenario: Read-only tool executes immediately
-
-```zig
-// Agent receives tool call: read_file(path="/home/user/README.md")
-// Agent: Look up "read_file" in registry
-// Agent: Execute immediately (no confirmation needed)
-// Agent: Capture output, send to model
-// Model receives file contents
-```
-
-#### Scenario: run_command waits for confirmation
-
-```zig
-// Agent receives tool call: run_command(command="ls -la")
-// Agent: Pause execution
-// UI: Show inline Y/n prompt: "Execute: ls -la? [Y/n]"
-// User: Press Y to approve
-// Agent: Execute command, capture result, send to model
-// User: Press N to deny
-// Agent: Cancel operation, send error to model
-```
+None - subprocess spawner is new infrastructure that doesn't modify existing requirements. Tool execution and confirmation logic are handled at the agent level (see tool-expansion spec).
 
 ---
 
 ## Non-Requirements (Out of Scope for v2)
 
-- Sandboxing/whitelisting commands (trust user to evaluate safety)
+- Confirmation logic (handled by agent, not subprocess spawner)
 - Real-time output streaming (deferred to v2.1)
 - Interactive command support (vim, less, etc. - not supported)
-- Command history (deferred to v2.1)
-- Diff previews for file modifications (deferred to v2.1)
 - Process management (kill, pause, resume - deferred)
 - Environment variable customization (use current environment)
 - Stdin piping (deferred to v2.1)
+- Custom escape/quoting logic (tools responsible for building safe commands)
 
 ## Dependencies
 
-- **Requires**: `agent-core`, `terminal-ui`, `tool-system` (base)
-- **Provides**: subprocess execution for `agent-core`
+- **Requires**: Zig standard library (`std.process`)
+- **Provides**: Subprocess spawning infrastructure for tool wrappers
+- **Used by**: `list_directory`, `search_files`, `write_file`, `run_command`
 
 ## Testing Strategy
 
 **Unit Tests**:
-- `run_command`: successful execution, failure exit codes, timeout handling
+- `subprocess.execute()`: successful execution, failure exit codes, timeout handling
 - Output capture: stdout only, stderr only, both combined
 - Output truncation at 1MB limit
 - Working directory parameter
 - Shell features: pipes, redirection, globbing
+- Exit code handling: 0, non-zero, timeout
 
 **Integration Tests**:
-- Tool registry includes run_command
-- Commands execute through agent loop
-- Tool results formatted correctly
-- Confirmation prompts work
-- User cancellation handled correctly
+- Tool wrappers use subprocess spawner correctly
+- Commands execute and return results
+- Results formatted correctly
+- Timeout enforcement works
 
 **Manual Tests**:
-- List directory: `ls -la`
-- Read file: `cat file.txt`
-- Create file: `echo 'content' > file.txt`
-- Edit file: `sed -i 's/old/new/' file.txt`
-- Search files: `grep -rn 'pattern' .`
-- Confirm and deny operations
-- Timeout handling
+- Execute various shell commands
+- Verify output capture
+- Test timeout with long-running command
+- Verify working directory parameter
 
 ## Related Specs
 
-- `agent-core` - Tool execution loop
+- `tool-expansion` - Tool wrappers that use subprocess spawner
+- `agent-core` - Tool execution loop with confirmation logic
 - `tool-system` (base v1) - Tool interface
-- `terminal-ui` - Inline confirmation prompts
-- `context-tracking` - Token tracking (unchanged)
 
 ## References
 
-- [Design: Single run_command Tool](../../design.md#decision-1-single-run_command-tool-vs-multiple-custom-tools)
-- [Design: No Sandboxing](../../design.md#decision-2-no-sandboxing---trust-the-user)
-- [Design: Timeout Handling](../../design.md#decision-4-timeout-handling-with-configurable-default)
-- [Design: Output Capture](../../design.md#decision-5-output-capture-with-1mb-cap)
+- [Design: Hybrid Approach](../../design.md#decision-1-hybrid-approach---structured-tools--escape-hatch)
+- [Design: No Sandboxing](../../design.md#decision-3-no-sandboxing---trust-the-user)
+- [Design: Timeout Handling](../../design.md#decision-5-timeout-handling-with-configurable-default)
+- [Design: Output Capture](../../design.md#decision-6-output-capture-with-1mb-cap)
 
-## Example Workflows
+## Example Internal Usage
 
-### Workflow: Multi-file refactoring
+### Example: list_directory tool using subprocess spawner
 
-```
-User: "Replace all occurrences of 'oldFunction' with 'newFunction' in src/"
+```zig
+// src/tools/list_directory.zig
+pub fn executeListDirectory(allocator: Allocator, args: std.json.Value) !ToolResult {
+    const path = args.object.get("path").?.string;
+    const recursive = if (args.object.get("recursive")) |r| r.bool else false;
 
-Agent: Let me search for files containing that pattern first.
-run_command(command="grep -rl 'oldFunction' src/")
-[User confirms: Y]
-Result: src/file1.js, src/file2.js
+    const command = if (recursive)
+        try std.fmt.allocPrint(allocator, "ls -laR {s}", .{path})
+    else
+        try std.fmt.allocPrint(allocator, "ls -la {s}", .{path});
+    defer allocator.free(command);
 
-Agent: I'll update both files.
-run_command(command="sed -i 's/oldFunction/newFunction/g' src/file1.js src/file2.js")
-[User confirms: Y]
-Result: success
-
-Agent: Let me verify the changes.
-run_command(command="grep -n 'newFunction' src/file1.js src/file2.js")
-[User confirms: Y]
-Result: Shows updated lines
+    // Call shared subprocess spawner
+    return subprocess.execute(allocator, command, 5, null);
+}
 ```
 
-### Workflow: Explore and create
+### Example: search_files tool using subprocess spawner
 
+```zig
+// src/tools/search_files.zig
+pub fn executeSearchFiles(allocator: Allocator, args: std.json.Value) !ToolResult {
+    const pattern = args.object.get("pattern").?.string;
+    const path = args.object.get("path").?.string;
+
+    // Escape single quotes in pattern
+    const escaped_pattern = try escapeShellString(allocator, pattern);
+    defer allocator.free(escaped_pattern);
+
+    const command = try std.fmt.allocPrint(
+        allocator,
+        "grep -rn '{s}' {s}",
+        .{escaped_pattern, path}
+    );
+    defer allocator.free(command);
+
+    // Call shared subprocess spawner
+    return subprocess.execute(allocator, command, 5, null);
+}
 ```
-User: "Create a new test file in the tests directory"
 
-Agent: Let me check the tests directory structure.
-run_command(command="ls -la tests/")
-[User confirms: Y]
-Result: Shows existing test files
+### Example: write_file tool using subprocess spawner
 
-Agent: I'll create a new test file.
-run_command(command="cat > tests/new_test.js <<'EOF'
-const assert = require('assert');
-describe('New Test', () => {
-  it('should pass', () => {
-    assert.equal(1, 1);
-  });
-});
-EOF")
-[User confirms: Y]
-Result: success
+```zig
+// src/tools/write_file.zig
+pub fn executeWriteFile(allocator: Allocator, args: std.json.Value) !ToolResult {
+    const path = args.object.get("path").?.string;
+    const content = args.object.get("content").?.string;
 
-Agent: File created. Let me verify.
-run_command(command="cat tests/new_test.js")
-[User confirms: Y]
-Result: Shows file contents
+    const command = try std.fmt.allocPrint(
+        allocator,
+        "cat > {s} <<'EOF'\n{s}\nEOF",
+        .{path, content}
+    );
+    defer allocator.free(command);
+
+    // Call shared subprocess spawner
+    return subprocess.execute(allocator, command, 5, null);
+}
 ```
