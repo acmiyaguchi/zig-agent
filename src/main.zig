@@ -169,7 +169,7 @@ pub fn main() !void {
     };
 
     // Initialize API client
-    var api_client = try client.APIClient.init(allocator, api_key, "anthropic/claude-3.5-sonnet");
+    var api_client = try client.APIClient.init(allocator, api_key, "anthropic/claude-haiku-4.5");
     defer api_client.deinit();
 
     // Initialize tool registry

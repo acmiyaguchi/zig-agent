@@ -94,7 +94,7 @@ pub const APIClient = struct {
         return APIClient{
             .allocator = allocator,
             .api_key = api_key,
-            .model = model orelse "anthropic/claude-3.5-sonnet",
+            .model = model orelse "anthropic/claude-haiku-4.5",
         };
     }
 
@@ -309,5 +309,6 @@ test "build request" {
     const req_json = try client.buildRequest(&messages, &.{});
     defer allocator.free(req_json);
 
-    try std.testing.expect(std.mem.indexOf(u8, req_json, "anthropic/claude-3.5-sonnet") != null);
+    try std.testing.expect(std.mem.indexOf(u8, req_json, "anthropic/claude-haiku-4.5") != null);
 }
+

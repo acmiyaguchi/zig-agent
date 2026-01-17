@@ -78,7 +78,7 @@ Returns list of available models with pricing and capabilities.
 
 ```json
 {
-  "model": "anthropic/claude-sonnet-4.5",
+  "model": "anthropic/claude-haiku-4.5",
   "messages": [
     {
       "role": "user",
@@ -92,7 +92,7 @@ Returns list of available models with pricing and capabilities.
 
 ```json
 {
-  "model": "anthropic/claude-sonnet-4.5",
+  "model": "anthropic/claude-haiku-4.5",
   "messages": [
     {
       "role": "user",
@@ -131,7 +131,7 @@ Returns list of available models with pricing and capabilities.
 ```json
 {
   "id": "gen-abc123",
-  "model": "anthropic/claude-sonnet-4.5",
+  "model": "anthropic/claude-haiku-4.5",
   "choices": [
     {
       "message": {
@@ -175,7 +175,7 @@ Set `"stream": true` in request body:
 
 ```json
 {
-  "model": "anthropic/claude-sonnet-4.5",
+  "model": "anthropic/claude-haiku-4.5",
   "messages": [...],
   "stream": true
 }
@@ -224,8 +224,8 @@ cancel_token.cancel();
 
 | Model | ID | Input | Output | Use Case |
 |-------|----|----|--------|----------|
-| **Haiku 4.5** | `anthropic/claude-haiku-4.5` | $1/M | $5/M | Fast, simple tasks |
-| **Sonnet 4.5** | `anthropic/claude-sonnet-4.5` | $3/M | $15/M | Balanced (default) |
+| **Haiku 4.5** | `anthropic/claude-haiku-4.5` | $1/M | $5/M | Fast (default) |
+| **Sonnet 4.5** | `anthropic/claude-sonnet-4.5` | $3/M | $15/M | Balanced |
 | **Opus 4.5** | `anthropic/claude-opus-4.5` | $15/M | $75/M | Complex reasoning |
 
 Prices are per million tokens (M). No markup from OpenRouter.
@@ -238,7 +238,7 @@ const model = if (task_complexity == .simple)
 else if (task_complexity == .complex)
     "anthropic/claude-opus-4.5"
 else
-    "anthropic/claude-sonnet-4.5";
+    "anthropic/claude-haiku-4.5";
 ```
 
 This is trivial with OpenRouter, would require separate API clients for direct provider APIs.
@@ -249,7 +249,7 @@ If Claude is unavailable, OpenRouter can route to alternatives:
 
 ```zig
 const model_priority = [_][]const u8{
-    "anthropic/claude-sonnet-4.5",  // Primary
+    "anthropic/claude-haiku-4.5",  // Primary
     "openai/gpt-4o",                // Fallback 1
     "google/gemini-pro-1.5",        // Fallback 2
 };
@@ -318,7 +318,7 @@ After executing the tool, send result back:
 
 ```json
 {
-  "model": "anthropic/claude-sonnet-4.5",
+  "model": "anthropic/claude-haiku-4.5",
   "messages": [
     {"role": "user", "content": "Read README.md"},
     {
@@ -347,7 +347,7 @@ const APIClient = struct {
     http_client: std.http.Client,
     api_key: []const u8,
     base_url: []const u8 = "https://openrouter.ai/api/v1",
-    default_model: []const u8 = "anthropic/claude-sonnet-4.5",
+    default_model: []const u8 = "anthropic/claude-haiku-4.5",
 
     pub fn init(allocator: Allocator, api_key: []const u8) !APIClient {
         return .{
@@ -489,7 +489,7 @@ const http_client = std.http.Client{
 export OPENROUTER_API_KEY="sk-or-v1-..."
 
 # Optional
-export OPENROUTER_MODEL="anthropic/claude-sonnet-4.5"
+export OPENROUTER_MODEL="anthropic/claude-haiku-4.5"
 export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 export OPENROUTER_MAX_TOKENS="4096"
 ```
@@ -501,7 +501,7 @@ export OPENROUTER_MAX_TOKENS="4096"
   "api": {
     "provider": "openrouter",
     "base_url": "https://openrouter.ai/api/v1",
-    "model": "anthropic/claude-sonnet-4.5",
+    "model": "anthropic/claude-haiku-4.5",
     "max_tokens": 4096,
     "temperature": 0.7
   },
@@ -557,7 +557,7 @@ export OPENROUTER_BASE_URL="http://localhost:8080/api/v1"
 **OpenRouter (OpenAI-compatible)**:
 ```json
 {
-  "model": "anthropic/claude-sonnet-4.5",
+  "model": "anthropic/claude-haiku-4.5",
   "messages": [{"role": "user", "content": "Hello"}],
   "stream": true
 }
@@ -593,7 +593,7 @@ const response = try api_client.createMessage(.{
 // After (OpenRouter)
 const api_client = APIClient.init(allocator, openrouter_key);
 api_client.base_url = "https://openrouter.ai/api/v1";
-api_client.default_model = "anthropic/claude-sonnet-4.5";
+api_client.default_model = "anthropic/claude-haiku-4.5";
 const response = try api_client.createChatCompletion(.{
     .messages = messages,
 });
@@ -609,7 +609,7 @@ const response = try api_client.createChatCompletion(.{
 fn selectModel(task: Task) []const u8 {
     return switch (task.complexity) {
         .simple => "anthropic/claude-haiku-4.5",  // $1/M input
-        .medium => "anthropic/claude-sonnet-4.5", // $3/M input
+        .medium => "anthropic/claude-haiku-4.5", // $3/M input
         .complex => "anthropic/claude-opus-4.5",  // $15/M input
     };
 }
