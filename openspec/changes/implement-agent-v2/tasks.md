@@ -83,11 +83,13 @@ Implementation organized into 4 phases. Complete each section sequentially; mark
 - [ ] 3.1.2 Implement `updateTokens(input: u32, output: u32)` method
 - [ ] 3.1.3 Accumulate tokens across turns (cumulative)
 
-### 3.2 API Response Parsing
-- [ ] 3.2.1 Update `APIClient.streamChatCompletion()` to parse usage from final chunk
-- [ ] 3.2.2 Extract `usage.input_tokens` and `usage.completion_tokens` from response
-- [ ] 3.2.3 Handle missing usage field gracefully (use default 0)
-- [ ] 3.2.4 Pass usage to Agent after each API call
+### 3.2 API Request & Response Changes
+- [ ] 3.2.1 Add `stream_options: { include_usage: true }` to `ChatCompletionRequest` struct
+- [ ] 3.2.2 Add `usage` field to `ChatCompletionChunk` struct (prompt_tokens, completion_tokens, total_tokens)
+- [ ] 3.2.3 Add `.usage` variant to `StreamChunk` union for callback
+- [ ] 3.2.4 Parse `usage` field from streaming response in `streamChatCompletion()`
+- [ ] 3.2.5 Emit `.usage` via callback when present
+- [ ] 3.2.6 Handle missing usage field gracefully (don't emit)
 
 ### 3.3 Terminal UI Status Line
 - [ ] 3.3.1 Add `renderStatusLine()` function to TerminalUI

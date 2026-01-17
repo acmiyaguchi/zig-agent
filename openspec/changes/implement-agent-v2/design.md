@@ -248,21 +248,59 @@ if (stdout.len >= MAX_OUTPUT or stderr.len >= MAX_OUTPUT) {
 
 ---
 
-### Decision 6: Token Tracking - Simple Counter Display
+### Decision 6: Token Tracking - Use OpenRouter's Usage Field
 
-**Choice**: Display cumulative token count in status line, no percentage or warnings
+**Choice**: Parse usage data from OpenRouter API responses, display in status line
 
-**Alternatives Considered**:
-1. Full context tracking with warnings at 80%/95%
-2. Simple counter display
+**Data Source**: OpenRouter includes `usage` in streaming responses when requested:
+```json
+{
+  "usage": {
+    "prompt_tokens": 1234,
+    "completion_tokens": 567,
+    "total_tokens": 1801
+  }
+}
+```
 
-**Rationale**:
-- Users just need rough visibility, not precise tracking
-- Percentage requires knowing model context limits (varies)
-- Simple counter is easier to implement and understand
-- v2.1 can add percentage when model switching is implemented
+**Implementation Changes**:
 
-**Implementation**:
+1. Add `stream_options` to request:
+```zig
+pub const ChatCompletionRequest = struct {
+    model: []const u8,
+    messages: []const Message,
+    tools: ?[]const ToolDefinition = null,
+    stream: bool = true,
+    stream_options: ?struct {
+        include_usage: bool = true,
+    } = .{ .include_usage = true },
+};
+```
+
+2. Add `usage` field to `ChatCompletionChunk`:
+```zig
+pub const ChatCompletionChunk = struct {
+    // ... existing fields ...
+    usage: ?struct {
+        prompt_tokens: u32,
+        completion_tokens: u32,
+        total_tokens: u32,
+    } = null,
+};
+```
+
+3. Parse and accumulate in client callback:
+```zig
+if (parsed.value.usage) |usage| {
+    callback(.{ .usage = .{
+        .prompt_tokens = usage.prompt_tokens,
+        .completion_tokens = usage.completion_tokens,
+    } }, context);
+}
+```
+
+4. Display in status line:
 ```zig
 pub fn renderStatusLine(self: *TerminalUI, tokens: u32) void {
     var buf: [50]u8 = undefined;
@@ -274,11 +312,16 @@ pub fn renderStatusLine(self: *TerminalUI, tokens: u32) void {
 }
 ```
 
-**Trade-offs**:
-- No warning when approaching context limit
-- Users must track limits themselves
+**Rationale**:
+- OpenRouter provides accurate token counts - no estimation needed
+- Simple to implement - just parse existing API response field
+- Users see real usage, not approximations
 
-**Trade-off Justification**: Keep v2 simple. Add percentage tracking in v2.1 with model switching.
+**Trade-offs**:
+- Depends on OpenRouter including usage (they do for streaming with `include_usage`)
+- No warning when approaching context limit (add in v2.1)
+
+**Trade-off Justification**: Use the data we already get. Simple and accurate.
 
 ---
 

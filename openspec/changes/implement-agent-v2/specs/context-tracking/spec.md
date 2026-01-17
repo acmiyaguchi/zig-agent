@@ -11,7 +11,8 @@ Track and display cumulative token usage in the status line. This gives users ro
 ## Context
 
 V1 had no token tracking. V2 adds basic token counting:
-- Parse token counts from API responses
+- Request usage via `stream_options: { include_usage: true }` in API calls
+- Parse token counts from OpenRouter's `usage` field in streaming responses
 - Accumulate across turns
 - Display in status line
 
@@ -57,27 +58,39 @@ try agent.executeTurn("Explain quantum computing");
 
 ---
 
-### Requirement: API client shall extract usage from responses
+### Requirement: API client shall request and extract usage from responses
 
 **Priority**: High
-**Rationale**: Usage data comes from API responses
+**Rationale**: Usage data comes from OpenRouter API responses
 
 The APIClient SHALL:
-- Parse `usage.input_tokens` and `usage.completion_tokens` from final SSE chunk
+- Include `stream_options: { include_usage: true }` in request body
+- Parse `usage.prompt_tokens` and `usage.completion_tokens` from streaming response
 - Handle missing usage field gracefully (use 0)
-- Return usage to caller for tracking
+- Emit usage via callback for tracking
+
+#### Scenario: Request includes stream_options
+
+```json
+{
+  "model": "anthropic/claude-sonnet-4",
+  "messages": [...],
+  "stream": true,
+  "stream_options": { "include_usage": true }
+}
+```
 
 #### Scenario: Extract usage from streaming response
 
 ```zig
-// API returns final SSE chunk with usage:
-// data: {"choices":[...], "usage": {"input_tokens": 100, "completion_tokens": 50}}
+// OpenRouter returns chunk with usage field:
+// data: {"choices":[...], "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}}
 
-// APIClient extracts and returns:
-const usage = ApiUsage{
-    .input_tokens = 100,
+// APIClient parses and emits via callback:
+callback(.{ .usage = .{
+    .prompt_tokens = 100,
     .completion_tokens = 50,
-};
+} }, context);
 ```
 
 #### Scenario: Handle missing usage field
@@ -185,4 +198,4 @@ Tokens: 1.2M     // 1200000 tokens (rare)
 
 ## References
 
-- [Design: Token Tracking](../../design.md#decision-5-token-tracking---simple-counter-display)
+- [Design: Token Tracking](../../design.md#decision-6-token-tracking---use-openrouters-usage-field)
