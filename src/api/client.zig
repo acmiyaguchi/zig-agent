@@ -17,28 +17,30 @@ pub const SSEEvent = union(enum) {
 };
 
 pub const SSEParser = struct {
-    buffer: std.array_list.Managed(u8),
+    buffer: std.ArrayListUnmanaged(u8),
+    allocator: std.mem.Allocator,
     consumed: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator) SSEParser {
         return .{
-            .buffer = std.array_list.Managed(u8).init(allocator),
+            .buffer = .{},
+            .allocator = allocator,
             .consumed = 0,
         };
     }
 
     pub fn deinit(self: *SSEParser) void {
-        self.buffer.deinit();
+        self.buffer.deinit(self.allocator);
     }
 
     pub fn push(self: *SSEParser, chunk: []const u8) !void {
-        try self.buffer.appendSlice(chunk);
+        try self.buffer.appendSlice(self.allocator, chunk);
     }
 
     pub fn next(self: *SSEParser) !?SSEEvent {
         // Remove previously consumed data
         if (self.consumed > 0) {
-            try self.buffer.replaceRange(0, self.consumed, &.{});
+            try self.buffer.replaceRange(self.allocator, 0, self.consumed, &.{});
             self.consumed = 0;
         }
 
@@ -74,7 +76,7 @@ pub const SSEParser = struct {
             }
 
             // If line was ignored (comment or empty), remove it now and continue
-            try self.buffer.replaceRange(0, self.consumed, &.{});
+            try self.buffer.replaceRange(self.allocator, 0, self.consumed, &.{});
             self.consumed = 0;
         }
     }
@@ -83,7 +85,6 @@ pub const SSEParser = struct {
 pub const APIClient = struct {
     allocator: std.mem.Allocator,
     api_key: []const u8,
-    client: std.http.Client,
     base_url: []const u8 = "https://openrouter.ai/api/v1",
     model: []const u8,
 
@@ -93,13 +94,13 @@ pub const APIClient = struct {
         return APIClient{
             .allocator = allocator,
             .api_key = api_key,
-            .client = std.http.Client{ .allocator = allocator },
             .model = model orelse "anthropic/claude-3.5-sonnet",
         };
     }
 
     pub fn deinit(self: *APIClient) void {
-        self.client.deinit();
+        _ = self;
+        // No cleanup needed for curl-based client
     }
 
     pub fn buildRequest(self: *APIClient, messages: []const types.Message, tools: []const types.ToolDefinition) ![]u8 {
@@ -120,123 +121,164 @@ pub const APIClient = struct {
         callback: *const fn (types.StreamChunk, *anyopaque) void,
         context: *anyopaque,
     ) !void {
-        debugLog("streamChatCompletion start", .{});
+        debugLog("streamChatCompletion start (curl)", .{});
 
         const payload = try self.buildRequest(messages, tools);
         defer self.allocator.free(payload);
         debugLog("request payload built, len={d}", .{payload.len});
 
-        const url_str = try std.fmt.allocPrint(self.allocator, "{s}/chat/completions", .{self.base_url});
-        defer self.allocator.free(url_str);
-        const parsed_uri = try std.Uri.parse(url_str);
-        debugLog("url: {s}", .{url_str});
+        const url = try std.fmt.allocPrint(self.allocator, "{s}/chat/completions", .{self.base_url});
+        defer self.allocator.free(url);
+        debugLog("url: {s}", .{url});
 
-        const auth_header = try std.fmt.allocPrint(self.allocator, "Bearer {s}", .{self.api_key});
+        const auth_header = try std.fmt.allocPrint(self.allocator, "Authorization: Bearer {s}", .{self.api_key});
         defer self.allocator.free(auth_header);
 
-        const extra_headers = [_]std.http.Header{
-            .{ .name = "Authorization", .value = auth_header },
-            .{ .name = "Content-Type", .value = "application/json" },
-            .{ .name = "HTTP-Referer", .value = "https://github.com/anthony/zig-agent" },
-            .{ .name = "X-Title", .value = "Zig Agent" },
-        };
+        // Spawn curl process
+        // -s: silent (no progress)
+        // -S: show errors
+        // -N: no buffering (important for SSE streaming)
+        // -X POST: POST method
+        // -H: headers
+        // -d @-: read body from stdin
+        var child = std.process.Child.init(&.{
+            "curl",
+            "-sSN",
+            "-X",
+            "POST",
+            "-H",
+            auth_header,
+            "-H",
+            "Content-Type: application/json",
+            "-H",
+            "HTTP-Referer: https://github.com/anthropics/zig-agent",
+            "-H",
+            "X-Title: Zig Agent",
+            "-d",
+            "@-",
+            url,
+        }, self.allocator);
 
-        // Reinitialize HTTP client to avoid connection state issues
-        self.client.deinit();
-        self.client = std.http.Client{ .allocator = self.allocator };
+        child.stdin_behavior = .Pipe;
+        child.stdout_behavior = .Pipe;
+        child.stderr_behavior = .Pipe;
 
-        debugLog("creating HTTP request...", .{});
-        var req = try self.client.request(.POST, parsed_uri, .{
-            .extra_headers = &extra_headers,
-        });
-        defer req.deinit();
-        debugLog("HTTP request created", .{});
+        debugLog("spawning curl...", .{});
+        try child.spawn();
+        debugLog("curl spawned", .{});
 
-        // Create a mutable copy of the payload (sendBodyComplete expects []u8, not []const u8)
-        const mutable_payload = try self.allocator.alloc(u8, payload.len);
-        defer self.allocator.free(mutable_payload);
-        @memcpy(mutable_payload, payload);
-
-        req.transfer_encoding = .{ .content_length = mutable_payload.len };
-        debugLog("sending body len={d}...", .{mutable_payload.len});
-        try req.sendBodyComplete(mutable_payload);
-        debugLog("body sent", .{});
-
-        var redirect_buffer: [4096]u8 = undefined;
-        debugLog("waiting for response head...", .{});
-        var response = try req.receiveHead(&redirect_buffer);
-        debugLog("received response head, status={d}", .{@intFromEnum(response.head.status)});
-
-        if (response.head.status != .ok) {
-            debugLog("API error, non-200 status", .{});
-            return error.APIError;
+        // Write payload to stdin
+        if (child.stdin) |stdin| {
+            debugLog("writing payload to curl stdin...", .{});
+            stdin.writeAll(payload) catch |err| {
+                debugLog("failed to write to stdin: {any}", .{err});
+                return error.CurlWriteFailed;
+            };
+            stdin.close();
+            child.stdin = null;
+            debugLog("payload written, stdin closed", .{});
         }
 
+        // Read and parse SSE from stdout
         var parser = SSEParser.init(self.allocator);
         defer parser.deinit();
 
-        var read_buf: [16384]u8 = undefined;
-        var transfer_buffer: [16384]u8 = undefined;
-        const reader_ptr = response.reader(&transfer_buffer);
-        debugLog("entering read loop", .{});
+        if (child.stdout) |stdout| {
+            var read_buf: [4096]u8 = undefined;
+            debugLog("entering read loop", .{});
 
-        while (true) {
-            const n = try reader_ptr.readSliceShort(&read_buf);
-            if (n == 0) break;
+            while (true) {
+                const n = stdout.read(&read_buf) catch |err| {
+                    debugLog("read error: {any}", .{err});
+                    break;
+                };
+                if (n == 0) {
+                    debugLog("EOF from curl", .{});
+                    break;
+                }
 
-            try parser.push(read_buf[0..n]);
-            while (try parser.next()) |ev| {
-                switch (ev) {
-                    .done => return,
-                    .json => |json| {
-                        const parsed = std.json.parseFromSlice(types.ChatCompletionChunk, self.allocator, json, .{
-                            .ignore_unknown_fields = true,
-                        }) catch |err| {
-                            std.debug.print("JSON parse error: {any} for json: {s}\n", .{err, json});
-                            continue;
-                        };
-                        defer parsed.deinit();
+                debugLog("read {d} bytes from curl", .{n});
+                try parser.push(read_buf[0..n]);
 
-                        if (parsed.value.choices.len > 0) {
-                            const choice = parsed.value.choices[0];
-                            if (choice.delta.content) |content| {
-                                callback(.{ .content = content }, context);
-                            }
-                            if (choice.delta.tool_calls) |tool_calls| {
-                                for (tool_calls) |tc| {
-                                    if (tc.id) |id| {
-                                        callback(.{ .tool_call_start = .{
-                                            .index = tc.index,
-                                            .id = id,
-                                            .name = tc.function.?.name.?,
-                                        } }, context);
-                                    }
-                                    if (tc.function) |f| {
-                                        if (f.arguments) |args| {
-                                            callback(.{ .tool_call_delta = .{
+                while (try parser.next()) |ev| {
+                    switch (ev) {
+                        .done => {
+                            debugLog("received [DONE]", .{});
+                            _ = child.wait() catch {};
+                            return;
+                        },
+                        .json => |json| {
+                            const parsed = std.json.parseFromSlice(types.ChatCompletionChunk, self.allocator, json, .{
+                                .ignore_unknown_fields = true,
+                            }) catch |err| {
+                                debugLog("JSON parse error: {any}", .{err});
+                                continue;
+                            };
+                            defer parsed.deinit();
+
+                            if (parsed.value.choices.len > 0) {
+                                const choice = parsed.value.choices[0];
+                                if (choice.delta.content) |content| {
+                                    callback(.{ .content = content }, context);
+                                }
+                                if (choice.delta.tool_calls) |tool_calls| {
+                                    for (tool_calls) |tc| {
+                                        if (tc.id) |id| {
+                                            callback(.{ .tool_call_start = .{
                                                 .index = tc.index,
-                                                .arguments = args,
+                                                .id = id,
+                                                .name = tc.function.?.name.?,
                                             } }, context);
+                                        }
+                                        if (tc.function) |f| {
+                                            if (f.arguments) |args| {
+                                                callback(.{ .tool_call_delta = .{
+                                                    .index = tc.index,
+                                                    .arguments = args,
+                                                } }, context);
+                                            }
                                         }
                                     }
                                 }
+                                if (choice.finish_reason) |reason| {
+                                    callback(.{ .finish = reason }, context);
+                                }
                             }
-                            if (choice.finish_reason) |reason| {
-                                callback(.{ .finish = reason }, context);
-                            }
-                        }
 
-                        // Check for usage information (sent in final chunk)
-                        if (parsed.value.usage) |usage| {
-                            callback(.{ .usage = .{
-                                .prompt_tokens = usage.prompt_tokens,
-                                .completion_tokens = usage.completion_tokens,
-                            } }, context);
-                        }
-                    },
+                            // Check for usage information (sent in final chunk)
+                            if (parsed.value.usage) |usage| {
+                                callback(.{ .usage = .{
+                                    .prompt_tokens = usage.prompt_tokens,
+                                    .completion_tokens = usage.completion_tokens,
+                                } }, context);
+                            }
+                        },
+                    }
                 }
             }
         }
+
+        // Check for errors from stderr
+        if (child.stderr) |stderr| {
+            var err_buf: [1024]u8 = undefined;
+            const err_len = stderr.read(&err_buf) catch 0;
+            if (err_len > 0) {
+                debugLog("curl stderr: {s}", .{err_buf[0..err_len]});
+            }
+        }
+
+        // Wait for curl to finish
+        const result = child.wait() catch |err| {
+            debugLog("wait error: {any}", .{err});
+            return error.CurlFailed;
+        };
+
+        if (result.Exited != 0) {
+            debugLog("curl exited with code {d}", .{result.Exited});
+            return error.CurlFailed;
+        }
+
+        debugLog("streamChatCompletion complete", .{});
     }
 };
 
