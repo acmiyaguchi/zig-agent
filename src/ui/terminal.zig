@@ -23,6 +23,12 @@ const OutputLine = struct {
     line_type: LineType,
 };
 
+/// A segment of text for rendering (split by newlines and width wrapping)
+const TextSegment = struct {
+    text: []const u8,
+    is_continuation: bool, // true if wrapped due to width, false if from newline
+};
+
 /// Terminal UI state and rendering
 pub const TerminalUI = struct {
     allocator: std.mem.Allocator,
@@ -140,11 +146,32 @@ pub const TerminalUI = struct {
         return count;
     }
 
-    /// Count how many screen lines a single output line takes
+    /// Count how many screen lines a single output line takes (newline-aware)
     fn countLineWraps(self: *TerminalUI, text: []const u8) usize {
         if (text.len == 0) return 1;
         const w = if (self.width > 0) self.width else 80;
-        return (text.len + w - 1) / w;
+
+        var count: usize = 0;
+        var line_start: usize = 0;
+        var i: usize = 0;
+
+        while (i <= text.len) {
+            const is_newline = i < text.len and text[i] == '\n';
+            const is_end = i == text.len;
+
+            if (is_newline or is_end) {
+                const line_len = i - line_start;
+                if (line_len == 0) {
+                    count += 1;
+                } else {
+                    count += (line_len + w - 1) / w;
+                }
+                line_start = i + 1;
+            }
+            i += 1;
+        }
+
+        return if (count == 0) 1 else count;
     }
 
     /// Count input wrap lines (capped for display)
@@ -155,6 +182,52 @@ pub const TerminalUI = struct {
         const available_width = if (self.width > prompt_len) self.width - prompt_len else 1;
         const raw_wraps = (input_len + available_width - 1) / available_width;
         return @min(raw_wraps, MAX_INPUT_WRAP_LINES);
+    }
+
+    /// Split text into segments by newlines and width wrapping
+    /// Caller must deinit the returned ArrayList
+    fn splitTextIntoSegments(self: *TerminalUI, text: []const u8) std.ArrayList(TextSegment) {
+        var segments = std.ArrayList(TextSegment){};
+        const w = if (self.width > 0) self.width else 80;
+
+        if (text.len == 0) {
+            segments.append(self.allocator, .{ .text = "", .is_continuation = false }) catch {};
+            return segments;
+        }
+
+        var line_start: usize = 0;
+        var i: usize = 0;
+
+        while (i <= text.len) {
+            const is_newline = i < text.len and text[i] == '\n';
+            const is_end = i == text.len;
+
+            if (is_newline or is_end) {
+                const line = text[line_start..i];
+
+                // Width-wrap this logical line
+                if (line.len == 0) {
+                    segments.append(self.allocator, .{ .text = "", .is_continuation = false }) catch {};
+                } else {
+                    var offset: usize = 0;
+                    var first_segment = true;
+                    while (offset < line.len) {
+                        const end = @min(offset + w, line.len);
+                        segments.append(self.allocator, .{
+                            .text = line[offset..end],
+                            .is_continuation = !first_segment,
+                        }) catch {};
+                        offset = end;
+                        first_segment = false;
+                    }
+                }
+
+                line_start = i + 1;
+            }
+            i += 1;
+        }
+
+        return segments;
     }
 
     /// Get number of lines available for output (excluding input area)
@@ -190,26 +263,24 @@ pub const TerminalUI = struct {
         var screen_row: usize = 0;
         var lines_skipped: usize = 0;
 
-        // Render each output line with wrapping (full scroll, no truncation)
+        // Render each output line with wrapping and newline support
         for (self.output_lines.items) |line| {
-            const wraps = self.countLineWraps(line.text);
+            var segments = self.splitTextIntoSegments(line.text);
+            defer segments.deinit(self.allocator);
+
             const color = getColor(line.line_type);
 
-            // Handle scrolling - skip lines before scroll_offset
-            if (lines_skipped + wraps <= self.scroll_offset) {
-                lines_skipped += wraps;
+            // Handle scrolling - skip segments before scroll_offset
+            if (lines_skipped + segments.items.len <= self.scroll_offset) {
+                lines_skipped += segments.items.len;
                 continue;
             }
 
-            // Render this line (possibly partially if at scroll boundary)
-            var text_offset: usize = 0;
-
-            while (text_offset < line.text.len or (text_offset == 0 and line.text.len == 0)) {
-                // Skip wrapped segments before scroll offset
+            // Render segments
+            for (segments.items) |segment| {
+                // Skip segments before scroll offset
                 if (lines_skipped < self.scroll_offset) {
                     lines_skipped += 1;
-                    text_offset += self.width;
-                    if (line.text.len == 0) break;
                     continue;
                 }
 
@@ -217,16 +288,10 @@ pub const TerminalUI = struct {
                 if (screen_row >= visible_lines) break;
 
                 // Draw this segment
-                const segment_end = @min(text_offset + self.width, line.text.len);
-                const segment = if (text_offset < line.text.len) line.text[text_offset..segment_end] else "";
-
-                try self.drawText(0, screen_row, segment, color);
+                try self.drawText(0, screen_row, segment.text, color);
 
                 screen_row += 1;
                 lines_skipped += 1;
-                text_offset += self.width;
-
-                if (line.text.len == 0) break;
             }
 
             if (screen_row >= visible_lines) break;
