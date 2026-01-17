@@ -70,6 +70,8 @@ V2 addresses these critical gaps with a balanced approach:
 - **Structured Destructive Tools** (require Y/n confirmation):
   - `write_file` - Wraps `cat > {path} <<'EOF'\n{content}\nEOF`
     - Parameters: `path` (string), `content` (string)
+  - `edit_file` - Wraps `sed -i 's/old_text/new_text/g' {path}`
+    - Parameters: `path` (string), `old_text` (string), `new_text` (string)
   - `run_command` - General escape hatch for any shell command
     - Parameters: `command` (string), `timeout` (optional int), `working_dir` (optional string)
 

@@ -36,7 +36,7 @@ V1 established a working agent loop on resource-constrained devices. V2 adds sub
 
 ### Decision 1: Hybrid Approach - Structured Tools + Escape Hatch
 
-**Choice**: Implement structured tool wrappers (list_directory, search_files, write_file) that internally call coreutils, plus general run_command escape hatch
+**Choice**: Implement structured tool wrappers (list_directory, search_files, write_file, edit_file) that internally call coreutils, plus general run_command escape hatch
 
 **Alternatives Considered**:
 1. Custom Zig tools (`write_file`, `edit_file`, `list_directory`, `grep_files`) - ~1000 LOC, reimplements existing functionality
@@ -99,6 +99,28 @@ pub fn executeWriteFile(allocator: Allocator, args: std.json.Value) !ToolResult 
     return subprocess.execute(allocator, command, 5, null);
 }
 
+// edit_file: Wraps `sed -i 's/old_text/new_text/g' {path}`
+pub fn executeEditFile(allocator: Allocator, args: std.json.Value) !ToolResult {
+    const path = args.object.get("path").?.string;
+    const old_text = args.object.get("old_text").?.string;
+    const new_text = args.object.get("new_text").?.string;
+
+    // Escape sed special characters in old_text and new_text
+    const escaped_old = try escapeSedPattern(allocator, old_text);
+    defer allocator.free(escaped_old);
+    const escaped_new = try escapeSedPattern(allocator, new_text);
+    defer allocator.free(escaped_new);
+
+    const command = try std.fmt.allocPrint(
+        allocator,
+        "sed -i 's/{s}/{s}/g' {s}",
+        .{escaped_old, escaped_new, path}
+    );
+    defer allocator.free(command);
+
+    return subprocess.execute(allocator, command, 5, null);
+}
+
 // run_command: General escape hatch
 pub fn executeRunCommand(allocator: Allocator, args: std.json.Value) !ToolResult {
     const command = args.object.get("command").?.string;
@@ -124,7 +146,7 @@ pub fn executeRunCommand(allocator: Allocator, args: std.json.Value) !ToolResult
 
 ### Decision 2: Confirmation Only for Destructive Operations
 
-**Choice**: Read-only tools (read_file, list_directory, search_files) require NO confirmation. Destructive tools (write_file, run_command) require Y/n confirmation.
+**Choice**: Read-only tools (read_file, list_directory, search_files) require NO confirmation. Destructive tools (write_file, edit_file, run_command) require Y/n confirmation.
 
 **Alternatives Considered**:
 1. Confirmation for all tools - too much friction, slows down read-only workflows
@@ -144,6 +166,7 @@ pub fn executeTool(self: *Agent, tool_name: []const u8, args: std.json.Value) !T
 
     // Check if tool requires confirmation
     const requires_confirmation = std.mem.eql(u8, tool_name, "write_file") or
+                                  std.mem.eql(u8, tool_name, "edit_file") or
                                   std.mem.eql(u8, tool_name, "run_command");
 
     if (requires_confirmation) {

@@ -54,22 +54,33 @@ Implementation organized into 4 phases. Complete each section sequentially; mark
 - [ ] 1.4.6 Return result to model
 - [ ] 1.4.7 Add unit tests (create new file, overwrite existing, write to invalid path)
 
-### 1.5 run_command Tool (Destructive)
-- [ ] 1.5.1 Create `src/tools/run_command.zig` module
-- [ ] 1.5.2 Implement tool schema (command: string, timeout?: int, working_dir?: string)
-- [ ] 1.5.3 Implement `executeRunCommand()` function
-- [ ] 1.5.4 Extract parameters (default timeout=5s)
-- [ ] 1.5.5 Call `subprocess.execute()` with provided parameters
-- [ ] 1.5.6 Return result to model
-- [ ] 1.5.7 Add unit tests (successful command, failed command, timeout, working_dir)
+### 1.5 edit_file Tool (Destructive)
+- [ ] 1.5.1 Create `src/tools/edit_file.zig` module
+- [ ] 1.5.2 Implement tool schema (path: string, old_text: string, new_text: string)
+- [ ] 1.5.3 Implement `executeEditFile()` function
+- [ ] 1.5.4 Implement `escapeSedPattern()` helper to escape sed special characters
+- [ ] 1.5.5 Build shell command: `sed -i 's/{escaped_old}/{escaped_new}/g' {path}`
+- [ ] 1.5.6 Call `subprocess.execute()` with 5s timeout
+- [ ] 1.5.7 Return result to model
+- [ ] 1.5.8 Add unit tests (replace text, text not found, special characters, invalid path)
 
-### 1.6 Tool Registry Integration
-- [ ] 1.6.1 Add `registerListDirectory()` method to ToolRegistry
-- [ ] 1.6.2 Add `registerSearchFiles()` method to ToolRegistry
-- [ ] 1.6.3 Add `registerWriteFile()` method to ToolRegistry
-- [ ] 1.6.4 Add `registerRunCommand()` method to ToolRegistry
-- [ ] 1.6.5 Call all registration methods in `ToolRegistry.init()`
-- [ ] 1.6.6 Verify 5 tools in registry (read_file, list_directory, search_files, write_file, run_command)
+### 1.6 run_command Tool (Destructive)
+- [ ] 1.6.1 Create `src/tools/run_command.zig` module
+- [ ] 1.6.2 Implement tool schema (command: string, timeout?: int, working_dir?: string)
+- [ ] 1.6.3 Implement `executeRunCommand()` function
+- [ ] 1.6.4 Extract parameters (default timeout=5s)
+- [ ] 1.6.5 Call `subprocess.execute()` with provided parameters
+- [ ] 1.6.6 Return result to model
+- [ ] 1.6.7 Add unit tests (successful command, failed command, timeout, working_dir)
+
+### 1.7 Tool Registry Integration
+- [ ] 1.7.1 Add `registerListDirectory()` method to ToolRegistry
+- [ ] 1.7.2 Add `registerSearchFiles()` method to ToolRegistry
+- [ ] 1.7.3 Add `registerWriteFile()` method to ToolRegistry
+- [ ] 1.7.4 Add `registerEditFile()` method to ToolRegistry
+- [ ] 1.7.5 Add `registerRunCommand()` method to ToolRegistry
+- [ ] 1.7.6 Call all registration methods in `ToolRegistry.init()`
+- [ ] 1.7.7 Verify 6 tools in registry (read_file, list_directory, search_files, write_file, edit_file, run_command)
 
 ---
 
@@ -84,7 +95,7 @@ Implementation organized into 4 phases. Complete each section sequentially; mark
 - [ ] 2.1.6 Clear prompt line after response
 
 ### 2.2 Agent Integration
-- [ ] 2.2.1 Add helper to identify destructive tools (write_file, run_command)
+- [ ] 2.2.1 Add helper to identify destructive tools (write_file, edit_file, run_command)
 - [ ] 2.2.2 Before executing destructive tool: call confirmation prompt
 - [ ] 2.2.3 Show tool name and relevant args to user in prompt
 - [ ] 2.2.4 Only execute tool if user confirms (Y/y)
@@ -186,12 +197,13 @@ Implementation organized into 4 phases. Complete each section sequentially; mark
 - `src/tools/list_directory.zig` - List directory tool
 - `src/tools/search_files.zig` - Search files tool
 - `src/tools/write_file.zig` - Write file tool
+- `src/tools/edit_file.zig` - Edit file tool (text replacement)
 - `src/tools/run_command.zig` - General command escape hatch
 
 ### Modified Files
 - `src/agent/agent.zig` - Add token tracking fields, destructive tool check
 - `src/api/client.zig` - Add usage parsing
-- `src/tools/registry.zig` - Add registration for 4 new tools
+- `src/tools/registry.zig` - Add registration for 5 new tools
 - `src/ui/terminal.zig` - Add status line, inline Y/n prompts
 
 ### Files Left Unchanged

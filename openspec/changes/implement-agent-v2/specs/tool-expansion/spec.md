@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Expand the tool system with structured wrappers around coreutils for common operations: list_directory, search_files, write_file. These tools provide clear, typed interfaces while internally leveraging battle-tested Unix utilities. Read-only tools require no confirmation; destructive tools require Y/n approval.
+Expand the tool system with structured wrappers around coreutils for common operations: list_directory, search_files, write_file, edit_file. These tools provide clear, typed interfaces while internally leveraging battle-tested Unix utilities. Read-only tools require no confirmation; destructive tools require Y/n approval.
 
 ## Context
 
@@ -14,6 +14,7 @@ V1 had only `read_file`. V2 adds structured tools that internally wrap shell com
 - `list_directory` - Wraps `ls -la`
 - `search_files` - Wraps `grep -rn`
 - `write_file` - Wraps `cat > file`
+- `edit_file` - Wraps `sed -i 's/old/new/g'`
 - `run_command` - General escape hatch for anything else
 
 **Key Insight**: Each tool is a thin wrapper (~20-30 LOC) that builds a shell command and calls the shared subprocess spawner. This gives us clear interfaces without reimplementing functionality.
@@ -181,6 +182,81 @@ The Tool Registry SHALL provide `write_file` tool with:
 
 ---
 
+### Requirement: Tool system shall provide edit_file tool
+
+**Priority**: High
+**Rationale**: Text replacement is essential for modifying existing code
+
+The Tool Registry SHALL provide `edit_file` tool with:
+- Parameters:
+  - `path` (string, required): File path to edit
+  - `old_text` (string, required): Text to find and replace
+  - `new_text` (string, required): Replacement text
+- Behavior: Internally executes `sed -i 's/{escaped_old}/{escaped_new}/g' {path}`
+- **Requires Y/n confirmation** (destructive operation)
+- Replaces ALL occurrences of old_text with new_text
+- Properly escapes sed special characters in both old_text and new_text
+
+#### Scenario: Successful text replacement
+
+```zig
+// Agent receives: edit_file(path="src/main.zig", old_text="TODO", new_text="DONE")
+// User sees prompt: "Execute edit_file src/main.zig? [Y/n]"
+// User confirms: Y
+// Tool internally runs: sed -i 's/TODO/DONE/g' src/main.zig
+// Expected result:
+// - All occurrences of "TODO" replaced with "DONE"
+// - Tool returns: { success: true, output: "" }
+```
+
+#### Scenario: Text not found in file
+
+```zig
+// Agent receives: edit_file(path="src/main.zig", old_text="NONEXISTENT", new_text="NEW")
+// User confirms: Y
+// Tool internally runs: sed -i 's/NONEXISTENT/NEW/g' src/main.zig
+// Expected result:
+// - sed succeeds (exit code 0) but makes no changes
+// - Tool returns: { success: true, output: "" }
+// Note: sed doesn't fail when pattern not found, it just makes no changes
+```
+
+#### Scenario: Special characters in pattern
+
+```zig
+// Agent receives: edit_file(path="config.json", old_text="\"key\": \"value\"", new_text="\"key\": \"new_value\"")
+// User confirms: Y
+// Tool internally runs: sed -i 's/\"key\": \"value\"/\"key\": \"new_value\"/g' config.json
+// (with proper escaping of quotes and special sed characters)
+// Expected result:
+// - Pattern with special characters is safely escaped
+// - Replacement executes correctly
+```
+
+#### Scenario: User denies edit operation
+
+```zig
+// Agent receives: edit_file(path="important.zig", old_text="foo", new_text="bar")
+// User sees prompt: "Execute edit_file important.zig? [Y/n]"
+// User denies: N
+// Expected result:
+// - Command NOT executed
+// - Tool returns: { success: false, error_message: "Operation cancelled by user" }
+```
+
+#### Scenario: Edit non-existent file
+
+```zig
+// Agent receives: edit_file(path="/nonexistent/file.txt", old_text="foo", new_text="bar")
+// User confirms: Y
+// Tool internally runs: sed -i 's/foo/bar/g' /nonexistent/file.txt
+// Expected result:
+// - Command fails (file not found)
+// - Tool returns: { success: false, output: "sed: can't read...", error_message: "Command failed with exit code 2" }
+```
+
+---
+
 ### Requirement: Tool system shall provide run_command escape hatch
 
 **Priority**: Medium
@@ -260,7 +336,7 @@ Model: Receives directory listing without any user prompt
 **Rationale**: Safety guard for operations that modify state
 
 The agent SHALL:
-- Identify destructive tools: `write_file`, `run_command`
+- Identify destructive tools: `write_file`, `edit_file`, `run_command`
 - Pause execution before running tool
 - Request user confirmation via inline Y/n prompt
 - Only execute if user confirms (Y/y)
@@ -292,8 +368,7 @@ None - these are entirely new tools, no modifications to existing requirements.
 
 ## Non-Requirements (Out of Scope for v2)
 
-- Edit-in-place tool (use write_file to overwrite)
-- Diff preview before write (deferred to v2.1)
+- Diff preview before write/edit (deferred to v2.1)
 - Move/rename tool (use run_command with `mv`)
 - Delete tool (use run_command with `rm`)
 - Copy tool (use run_command with `cp`)
@@ -311,6 +386,7 @@ None - these are entirely new tools, no modifications to existing requirements.
 - `list_directory`: simple listing, recursive, non-existent path
 - `search_files`: pattern found, not found, special characters in pattern
 - `write_file`: create new, overwrite existing, invalid path
+- `edit_file`: replace text, text not found, special characters, invalid path
 - `run_command`: simple command, timeout, working directory
 
 **Integration Tests**:
@@ -324,6 +400,7 @@ None - these are entirely new tools, no modifications to existing requirements.
 - List directory and verify output
 - Search for pattern across files
 - Create new file with write_file
+- Edit existing file with edit_file
 - Run arbitrary command via run_command
 - Deny destructive operation and verify cancellation
 
@@ -357,6 +434,20 @@ Result: src/file1.zig:42:// TODO: fix this
         src/file2.zig:15:// TODO: optimize
 
 Agent: Found 2 TODO comments in the codebase.
+```
+
+### Workflow: Edit existing file (requires confirmation)
+
+```
+User: "Replace all TODO comments with DONE in the main module"
+
+Agent: I'll update the TODO comments.
+edit_file(path="src/main.zig", old_text="// TODO:", new_text="// DONE:")
+[User sees prompt: "Execute edit_file src/main.zig? [Y/n]"]
+User confirms: Y
+Result: Text replaced successfully
+
+Agent: All TODO comments have been marked as DONE in src/main.zig
 ```
 
 ### Workflow: Create new file (requires confirmation)
