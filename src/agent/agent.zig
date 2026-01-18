@@ -1,20 +1,13 @@
 // Agent Core logic
 const std = @import("std");
 const api = @import("api");
+const utils = @import("utils");
+const logging = utils.logging;
+const system = utils.system;
 const api_types = api.types;
 const agent_types = @import("types.zig");
 const client = api.client;
 const registry = api.registry;
-
-/// Debug logging (writes to file)
-fn debugLog(comptime fmt: []const u8, args: anytype) void {
-    const file = std.fs.cwd().createFile("/tmp/zig-agent-debug.log", .{ .truncate = false }) catch return;
-    defer file.close();
-    file.seekFromEnd(0) catch return;
-    var buf: [4096]u8 = undefined;
-    const msg = std.fmt.bufPrint(&buf, fmt ++ "\n", args) catch return;
-    file.writeAll(msg) catch return;
-}
 
 pub const ConversationState = struct {
     messages: std.ArrayList(api_types.Message),
@@ -72,36 +65,6 @@ pub const Agent = struct {
     const MEMORY_WARNING_THRESHOLD: usize = 40 * 1024 * 1024; // 40MB
     const MEMORY_REFUSE_THRESHOLD: usize = 45 * 1024 * 1024; // 45MB
 
-    fn getCurrentRSS(allocator: std.mem.Allocator) ?usize {
-        const statm_path = "/proc/self/statm";
-        const file = std.fs.openFileAbsolute(statm_path, .{}) catch {
-            return null;
-        };
-        defer file.close();
-
-        const content = file.readToEndAlloc(allocator, 1024) catch {
-            return null;
-        };
-        defer allocator.free(content);
-
-        var fields = std.mem.splitSequence(u8, content, " ");
-        _ = fields.next(); // Skip first field (vsize)
-
-        // Get RSS field (second field)
-        if (fields.next()) |rss_str| {
-            const rss_pages = std.fmt.parseUnsigned(usize, std.mem.trim(u8, rss_str, " \t\n\r"), 10) catch {
-                return null;
-            };
-
-            // Standard page size on most Linux systems
-            const page_size: usize = 4096;
-
-            return rss_pages * page_size;
-        }
-
-        return null;
-    }
-
     pub fn init(
         allocator: std.mem.Allocator,
         api_client: *client.APIClient,
@@ -124,10 +87,10 @@ pub const Agent = struct {
     }
 
     pub fn executeTurn(self: *Agent, user_input: []const u8) !void {
-        debugLog("[agent] executeTurn called with input: {s}", .{user_input});
+        logging.debugLog("[agent] executeTurn called with input: {s}", .{user_input});
 
         // Check memory usage
-        if (getCurrentRSS(self.allocator)) |rss| {
+        if (system.getCurrentRSS(self.allocator)) |rss| {
             if (rss >= Agent.MEMORY_REFUSE_THRESHOLD) {
                 self.emit(.{ .@"error" = "Memory limit exceeded (45MB). Please restart." });
                 return;
@@ -242,9 +205,9 @@ pub const Agent = struct {
                 }
             }.call;
 
-            debugLog("[agent] calling streamChatCompletion...", .{});
+            logging.debugLog("[agent] calling streamChatCompletion...", .{});
             try self.api_client.streamChatCompletion(messages, tool_defs, callback, &ctx);
-            debugLog("[agent] streamChatCompletion returned", .{});
+            logging.debugLog("[agent] streamChatCompletion returned", .{});
 
             // Post-stream processing
 
@@ -313,11 +276,11 @@ pub const Agent = struct {
 
                 // Execute tools
                 for (calls) |tc| {
-                    debugLog("[agent] executing tool: {s}", .{tc.function.name});
+                    logging.debugLog("[agent] executing tool: {s}", .{tc.function.name});
                     if (self.tools.find(tc.function.name)) |tool| {
                         // Check if confirmation is required
                         if (tool.requires_confirmation) {
-                            debugLog("[agent] tool requires confirmation", .{});
+                            logging.debugLog("[agent] tool requires confirmation", .{});
                             if (self.confirmation_handler) |handler| {
                                 const confirmed = handler(
                                     tc.function.name,
@@ -349,7 +312,7 @@ pub const Agent = struct {
                             }
                         }
 
-                        debugLog("[agent] calling tool.execute for {s}", .{tc.function.name});
+                        logging.debugLog("[agent] calling tool.execute for {s}", .{tc.function.name});
                         const result = tool.execute(self.allocator, tc.function.arguments) catch |err| blk: {
                             // Handle unexpected error (e.g. OOM) during execution wrapper
                             // (Actual tool errors are returned as ToolResult with success=false)
@@ -361,7 +324,7 @@ pub const Agent = struct {
                             };
                         };
 
-                        debugLog("[agent] tool.execute returned, success={}", .{result.success});
+                        logging.debugLog("[agent] tool.execute returned, success={}", .{result.success});
                         const output_copy = try self.allocator.dupe(u8, result.output);
 
                         try self.conversation.addMessage(.{

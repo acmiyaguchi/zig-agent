@@ -1,15 +1,9 @@
 const std = @import("std");
 const types = @import("types.zig");
+const utils = @import("utils");
+const logging = utils.logging;
 
-/// Debug logging (writes to file)
-fn debugLog(comptime fmt: []const u8, args: anytype) void {
-    const file = std.fs.cwd().createFile("/tmp/zig-agent-debug.log", .{ .truncate = false }) catch return;
-    defer file.close();
-    file.seekFromEnd(0) catch return;
-    var buf: [4096]u8 = undefined;
-    const msg = std.fmt.bufPrint(&buf, "[api] " ++ fmt ++ "\n", args) catch return;
-    file.writeAll(msg) catch return;
-}
+// Use logging.debugLog instead of local definition
 
 pub const SSEEvent = union(enum) {
     json: []const u8,
@@ -121,15 +115,15 @@ pub const APIClient = struct {
         callback: *const fn (types.StreamChunk, *anyopaque) void,
         context: *anyopaque,
     ) !void {
-        debugLog("streamChatCompletion start (curl)", .{});
+        logging.debugLog("streamChatCompletion start (curl)", .{});
 
         const payload = try self.buildRequest(messages, tools);
         defer self.allocator.free(payload);
-        debugLog("request payload built, len={d}", .{payload.len});
+        logging.debugLog("request payload built, len={d}", .{payload.len});
 
         const url = try std.fmt.allocPrint(self.allocator, "{s}/chat/completions", .{self.base_url});
         defer self.allocator.free(url);
-        debugLog("url: {s}", .{url});
+        logging.debugLog("url: {s}", .{url});
 
         const auth_header = try std.fmt.allocPrint(self.allocator, "Authorization: Bearer {s}", .{self.api_key});
         defer self.allocator.free(auth_header);
@@ -163,20 +157,20 @@ pub const APIClient = struct {
         child.stdout_behavior = .Pipe;
         child.stderr_behavior = .Pipe;
 
-        debugLog("spawning curl...", .{});
+        logging.debugLog("spawning curl...", .{});
         try child.spawn();
-        debugLog("curl spawned", .{});
+        logging.debugLog("curl spawned", .{});
 
         // Write payload to stdin
         if (child.stdin) |stdin| {
-            debugLog("writing payload to curl stdin...", .{});
+            logging.debugLog("writing payload to curl stdin...", .{});
             stdin.writeAll(payload) catch |err| {
-                debugLog("failed to write to stdin: {any}", .{err});
+                logging.debugLog("failed to write to stdin: {any}", .{err});
                 return error.CurlWriteFailed;
             };
             stdin.close();
             child.stdin = null;
-            debugLog("payload written, stdin closed", .{});
+            logging.debugLog("payload written, stdin closed", .{});
         }
 
         // Read and parse SSE from stdout
@@ -185,25 +179,25 @@ pub const APIClient = struct {
 
         if (child.stdout) |stdout| {
             var read_buf: [4096]u8 = undefined;
-            debugLog("entering read loop", .{});
+            logging.debugLog("entering read loop", .{});
 
             while (true) {
                 const n = stdout.read(&read_buf) catch |err| {
-                    debugLog("read error: {any}", .{err});
+                    logging.debugLog("read error: {any}", .{err});
                     break;
                 };
                 if (n == 0) {
-                    debugLog("EOF from curl", .{});
+                    logging.debugLog("EOF from curl", .{});
                     break;
                 }
 
-                debugLog("read {d} bytes from curl", .{n});
+                logging.debugLog("read {d} bytes from curl", .{n});
                 try parser.push(read_buf[0..n]);
 
                 while (try parser.next()) |ev| {
                     switch (ev) {
                         .done => {
-                            debugLog("received [DONE]", .{});
+                            logging.debugLog("received [DONE]", .{});
                             _ = child.wait() catch {};
                             return;
                         },
@@ -211,7 +205,7 @@ pub const APIClient = struct {
                             const parsed = std.json.parseFromSlice(types.ChatCompletionChunk, self.allocator, json, .{
                                 .ignore_unknown_fields = true,
                             }) catch |err| {
-                                debugLog("JSON parse error: {any}", .{err});
+                                logging.debugLog("JSON parse error: {any}", .{err});
                                 continue;
                             };
                             defer parsed.deinit();
@@ -263,22 +257,22 @@ pub const APIClient = struct {
             var err_buf: [1024]u8 = undefined;
             const err_len = stderr.read(&err_buf) catch 0;
             if (err_len > 0) {
-                debugLog("curl stderr: {s}", .{err_buf[0..err_len]});
+                logging.debugLog("curl stderr: {s}", .{err_buf[0..err_len]});
             }
         }
 
         // Wait for curl to finish
         const result = child.wait() catch |err| {
-            debugLog("wait error: {any}", .{err});
+            logging.debugLog("wait error: {any}", .{err});
             return error.CurlFailed;
         };
 
         if (result.Exited != 0) {
-            debugLog("curl exited with code {d}", .{result.Exited});
+            logging.debugLog("curl exited with code {d}", .{result.Exited});
             return error.CurlFailed;
         }
 
-        debugLog("streamChatCompletion complete", .{});
+        logging.debugLog("streamChatCompletion complete", .{});
     }
 };
 

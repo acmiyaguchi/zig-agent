@@ -20,6 +20,7 @@ const CoreDeps = struct {
     api_mod: *std.Build.Module,
     tools_mod: *std.Build.Module,
     agent_mod: *std.Build.Module,
+    utils_mod: *std.Build.Module,
 };
 
 pub fn build(b: *std.Build) void {
@@ -28,12 +29,20 @@ pub fn build(b: *std.Build) void {
 
     // --- Modules ---
 
+    // 0. Utils - shared utilities
+    const utils_mod = b.createModule(.{
+        .root_source_file = b.path("src/utils/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // 1. API - core types and client
     const api_mod = b.createModule(.{
         .root_source_file = b.path("src/api/root.zig"),
         .target = target,
         .optimize = optimize,
     });
+    api_mod.addImport("utils", utils_mod);
 
     // 2. Tools - tool registry and implementations
     const tools_mod = b.createModule(.{
@@ -42,6 +51,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     tools_mod.addImport("api", api_mod);
+    tools_mod.addImport("utils", utils_mod);
 
     // 3. Agent - agent core logic
     const agent_mod = b.createModule(.{
@@ -51,6 +61,7 @@ pub fn build(b: *std.Build) void {
     });
     agent_mod.addImport("api", api_mod);
     agent_mod.addImport("tools", tools_mod);
+    agent_mod.addImport("utils", utils_mod);
 
     // 4. Termbox (UI)
     const termbox_mod = b.createModule(.{
@@ -74,6 +85,7 @@ pub fn build(b: *std.Build) void {
     lib_mod.addImport("tools", tools_mod);
     lib_mod.addImport("agent", agent_mod);
     lib_mod.addImport("termbox", termbox_mod);
+    lib_mod.addImport("utils", utils_mod);
 
     // --- Dependencies ---
     // libxev (Zig module)
@@ -92,6 +104,7 @@ pub fn build(b: *std.Build) void {
         .api_mod = api_mod,
         .tools_mod = tools_mod,
         .agent_mod = agent_mod,
+        .utils_mod = utils_mod,
     };
 
     addApp(b, deps);
@@ -117,6 +130,7 @@ fn addApp(b: *std.Build, deps: CoreDeps) void {
     exe.root_module.addImport("api", deps.api_mod);
     exe.root_module.addImport("tools", deps.tools_mod);
     exe.root_module.addImport("agent", deps.agent_mod);
+    exe.root_module.addImport("utils", deps.utils_mod);
     exe.linkLibC();
 
     // --- Install ---
@@ -149,6 +163,7 @@ fn addUnitTests(b: *std.Build, deps: CoreDeps) void {
     exe_unit_tests.root_module.addImport("api", deps.api_mod);
     exe_unit_tests.root_module.addImport("tools", deps.tools_mod);
     exe_unit_tests.root_module.addImport("agent", deps.agent_mod);
+    exe_unit_tests.root_module.addImport("utils", deps.utils_mod);
     exe_unit_tests.linkLibC();
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);

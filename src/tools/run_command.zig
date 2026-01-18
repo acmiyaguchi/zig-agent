@@ -1,7 +1,7 @@
 // run_command tool
 const std = @import("std");
 const registry = @import("api").registry;
-const subprocess = @import("subprocess.zig");
+const utils = @import("utils");
 
 pub fn initTool(allocator: std.mem.Allocator) !registry.Tool {
     const parameters_json =
@@ -70,7 +70,40 @@ fn executeRunCommand(allocator: std.mem.Allocator, arguments_json: []const u8) a
         }
     }
 
-    return subprocess.execute(allocator, command, timeout, working_dir);
+    const result = try utils.subprocess.execute(allocator, command, timeout, working_dir);
+    defer result.deinit(allocator);
+
+    // Combine stdout and stderr for the tool output
+    var output = std.ArrayList(u8){};
+    errdefer output.deinit(allocator);
+
+    if (result.stdout.len > 0) {
+        try output.appendSlice(allocator, result.stdout);
+    }
+
+    if (result.stderr.len > 0) {
+        if (output.items.len > 0) {
+            try output.appendSlice(allocator, "\n--- stderr ---\n");
+        }
+        try output.appendSlice(allocator, result.stderr);
+    }
+
+    if (result.timed_out) {
+        try output.appendSlice(allocator, "\n[timed out]");
+    } else if (result.exit_code != 0) {
+        const exit_msg = try std.fmt.allocPrint(allocator, "\n[exit code: {d}]", .{result.exit_code});
+        defer allocator.free(exit_msg);
+        try output.appendSlice(allocator, exit_msg);
+    }
+
+    if (output.items.len == 0) {
+        try output.appendSlice(allocator, "(no output)");
+    }
+
+    return registry.ToolResult{
+        .success = result.exit_code == 0 and !result.timed_out,
+        .output = try output.toOwnedSlice(allocator),
+    };
 }
 
 test "run_command basic" {

@@ -1,7 +1,7 @@
 // search_files tool
 const std = @import("std");
 const registry = @import("api").registry;
-const subprocess = @import("subprocess.zig");
+const utils = @import("utils");
 
 pub fn initTool(allocator: std.mem.Allocator) !registry.Tool {
     const parameters_json =
@@ -72,7 +72,39 @@ fn executeSearchFiles(allocator: std.mem.Allocator, arguments_json: []const u8) 
     const command = try std.fmt.allocPrint(allocator, "grep -rn '{s}' {s}", .{ escaped_pattern.items, path });
     defer allocator.free(command);
 
-    return subprocess.execute(allocator, command, 60, null);
+    const result = try utils.subprocess.execute(allocator, command, 60, null);
+    defer result.deinit(allocator);
+
+    if (result.timed_out) {
+        return registry.ToolResult{
+            .success = false,
+            .output = try allocator.dupe(u8, "Search timed out."),
+        };
+    }
+
+    if (result.exit_code == 0) {
+        // Match found
+        return registry.ToolResult{
+            .success = true,
+            .output = try allocator.dupe(u8, result.stdout),
+        };
+    } else if (result.exit_code == 1) {
+        // No match found (grep specific)
+        return registry.ToolResult{
+            .success = false, // Or true with empty output? Convention usually is fail if not found or empty
+            .output = try allocator.dupe(u8, "No matches found."),
+        };
+    } else {
+        // Error
+        var msg = std.ArrayList(u8){};
+        errdefer msg.deinit(allocator);
+        try msg.appendSlice(allocator, "grep error: ");
+        try msg.appendSlice(allocator, result.stderr);
+        return registry.ToolResult{
+            .success = false,
+            .output = try msg.toOwnedSlice(allocator),
+        };
+    }
 }
 
 test "search_files absolute path check" {
