@@ -1,6 +1,12 @@
+//! Manual test harness for Streaming API.
+//!
+//! This test connects to the LLM API and streams a response, verifying
+//! chunk processing, tool call parsing, and usage stats in real-time.
+
 const std = @import("std");
-const types = @import("api/types.zig");
-const client = @import("api/client.zig");
+const app = @import("app");
+const types = app.api.types;
+const client = app.api.client;
 
 fn streamCallback(chunk: types.StreamChunk, context: *anyopaque) void {
     _ = context;
@@ -44,8 +50,8 @@ pub fn main() !void {
     defer api_client.deinit();
 
     // Setup tools
-    const registry = @import("tools/registry.zig");
-    const read_file = @import("tools/read_file.zig");
+    const registry = app.tools.registry;
+    const read_file = app.tools.read_file;
     var tool_registry = registry.ToolRegistry.init(allocator);
     defer tool_registry.deinit();
 

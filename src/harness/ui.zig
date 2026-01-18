@@ -1,8 +1,13 @@
-// Manual test for Terminal UI rendering with termbox2
+//! Manual test harness for Terminal UI.
+//!
+//! This test renders the TUI components (via termbox2) to verifying layout,
+//! input handling, and rendering correctness without connecting to a real agent.
+
 const std = @import("std");
-const terminal = @import("ui/terminal.zig");
-const agent_types = @import("agent/types.zig");
-const tb = @import("ui/termbox.zig");
+const app = @import("app");
+const terminal = app.ui.terminal;
+const agent_types = app.agent.types;
+const tb = app.ui.termbox;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

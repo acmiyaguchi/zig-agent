@@ -1,14 +1,60 @@
+//! Build configuration for the Zig Agent project.
+//!
+//! Targets:
+//! - zag: Main application executable.
+//! - zag-tests: Unit tests for the main application.
+//! - test-*: Harness executables for manual testing of specific components.
+//!
+//! Dependencies:
+//! - libxev: Event loop.
+//! - termbox2: Terminal UI library (C dependency).
+
 const std = @import("std");
+
+const CoreDeps = struct {
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    libxev_mod: *std.Build.Module,
+    lib_mod: *std.Build.Module,
+};
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // --- Shared Library Module ---
+    const lib_mod = b.createModule(.{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // --- Dependencies ---
+    // 1. libxev (Zig module)
+    const libxev_dep = b.dependency("libxev", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const libxev_mod = libxev_dep.module("xev");
+
+    const deps = CoreDeps{
+        .target = target,
+        .optimize = optimize,
+        .libxev_mod = libxev_mod,
+        .lib_mod = lib_mod,
+    };
+
+    addApp(b, deps);
+    addUnitTests(b, deps);
+    addHarness(b, deps);
+}
+
+fn addApp(b: *std.Build, deps: CoreDeps) void {
     // Create the root module for the executable
     const root_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .target = deps.target,
+        .optimize = deps.optimize,
     });
 
     const exe = b.addExecutable(.{
@@ -16,28 +62,8 @@ pub fn build(b: *std.Build) void {
         .root_module = root_module,
     });
 
-    // --- Dependencies ---
-
-    // 1. libxev (Zig module)
-    const libxev_dep = b.dependency("libxev", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const libxev_mod = libxev_dep.module("xev");
-    exe.root_module.addImport("xev", libxev_mod);
-
-    // 2. termbox2 (C library)
-    // We add C source files and include paths to the executable
-    exe.addCSourceFile(.{
-        .file = b.path("src/ui/termbox_impl.c"),
-        .flags = &.{
-            "-std=c99",
-            "-D_XOPEN_SOURCE",
-            "-D_DEFAULT_SOURCE",
-        },
-    });
-    exe.addIncludePath(b.path("vendor/termbox2"));
-    exe.linkLibC();
+    exe.root_module.addImport("xev", deps.libxev_mod);
+    linkTermbox(b, exe);
 
     // --- Install ---
     b.installArtifact(exe);
@@ -51,69 +77,64 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+}
 
-    // --- Test Step ---
+fn addUnitTests(b: *std.Build, deps: CoreDeps) void {
     const test_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .target = deps.target,
+        .optimize = deps.optimize,
     });
     const exe_unit_tests = b.addTest(.{
-        .name = "zig-agent-tests",
+        .name = "zag-tests",
         .root_module = test_module,
     });
 
-    // Add dependencies to tests
-    exe_unit_tests.root_module.addImport("xev", libxev_mod);
-    exe_unit_tests.addCSourceFile(.{
-        .file = b.path("src/ui/termbox_impl.c"),
-        .flags = &.{ "-std=c99", "-D_XOPEN_SOURCE", "-D_DEFAULT_SOURCE" },
-    });
-    exe_unit_tests.addIncludePath(b.path("vendor/termbox2"));
-    exe_unit_tests.linkLibC();
+    exe_unit_tests.root_module.addImport("xev", deps.libxev_mod);
+    linkTermbox(b, exe_unit_tests);
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
+}
 
-    // --- Manual Test Executables ---
-    const manual_tests = [_][]const u8{
-        "manual_test_stream",
-        "manual_test_agent",
-        "test_all_tools",
+fn addHarness(b: *std.Build, deps: CoreDeps) void {
+    const harness_tests = [_][]const u8{
+        "stream",
+        "agent",
+        "tools",
+        "ui",
     };
 
-    for (manual_tests) |test_name| {
+    for (harness_tests) |test_name| {
         const test_mod = b.createModule(.{
-            .root_source_file = b.path(b.fmt("src/{s}.zig", .{test_name})),
-            .target = target,
-            .optimize = optimize,
+            .root_source_file = b.path(b.fmt("src/harness/{s}.zig", .{test_name})),
+            .target = deps.target,
+            .optimize = deps.optimize,
         });
+        test_mod.addImport("app", deps.lib_mod);
+
         const test_exe = b.addExecutable(.{
-            .name = test_name,
+            .name = b.fmt("test-{s}", .{test_name}),
             .root_module = test_mod,
         });
-        test_exe.root_module.addImport("xev", libxev_mod);
-        test_exe.linkLibC();
+        test_exe.root_module.addImport("xev", deps.libxev_mod);
+        linkTermbox(b, test_exe);
+
         b.installArtifact(test_exe);
     }
+}
 
-    // --- Manual Test UI (requires termbox2) ---
-    const ui_test_mod = b.createModule(.{
-        .root_source_file = b.path("src/manual_test_ui.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const ui_test_exe = b.addExecutable(.{
-        .name = "manual_test_ui",
-        .root_module = ui_test_mod,
-    });
-    ui_test_exe.addCSourceFile(.{
+fn linkTermbox(b: *std.Build, exe: *std.Build.Step.Compile) void {
+    exe.addCSourceFile(.{
         .file = b.path("src/ui/termbox_impl.c"),
-        .flags = &.{ "-std=c99", "-D_XOPEN_SOURCE", "-D_DEFAULT_SOURCE" },
+        .flags = &.{
+            "-std=c99",
+            "-D_XOPEN_SOURCE",
+            "-D_DEFAULT_SOURCE",
+        },
     });
-    ui_test_exe.addIncludePath(b.path("vendor/termbox2"));
-    ui_test_exe.linkLibC();
-    b.installArtifact(ui_test_exe);
+    exe.addIncludePath(b.path("vendor/termbox2"));
+    exe.linkLibC();
 }
