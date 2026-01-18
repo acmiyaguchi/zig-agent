@@ -7,7 +7,7 @@ const tools = @import("tools/pkg.zig");
 const agent_lib = @import("agent/agent.zig");
 const xev = @import("xev");
 const TerminalUI = @import("ui/terminal.zig").TerminalUI;
-const tb = @import("ui/termbox.zig");
+const tb = @import("termbox");
 
 /// InteractiveMode encapsulates the libxev event loop and termbox input handling
 const InteractiveMode = struct {
@@ -284,5 +284,5 @@ test {
     _ = @import("tools/edit_file.zig");
     _ = @import("tools/run_command.zig");
     _ = @import("ui/terminal.zig");
-    _ = @import("ui/termbox.zig");
+    _ = @import("termbox");
 }

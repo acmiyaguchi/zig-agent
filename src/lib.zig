@@ -21,5 +21,5 @@ pub const tools = struct {
 
 pub const ui = struct {
     pub const terminal = @import("ui/terminal.zig");
-    pub const termbox = @import("ui/termbox.zig");
+    pub const termbox = @import("termbox");
 };

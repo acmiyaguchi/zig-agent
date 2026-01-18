@@ -16,6 +16,7 @@ const CoreDeps = struct {
     optimize: std.builtin.OptimizeMode,
     libxev_mod: *std.Build.Module,
     lib_mod: *std.Build.Module,
+    termbox_mod: *std.Build.Module,
 };
 
 pub fn build(b: *std.Build) void {
@@ -37,10 +38,27 @@ pub fn build(b: *std.Build) void {
     });
     const libxev_mod = libxev_dep.module("xev");
 
+    // 2. termbox module
+    const termbox_mod = b.createModule(.{
+        .root_source_file = b.path("src/ui/termbox.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    termbox_mod.addCSourceFile(.{
+        .file = b.path("src/ui/termbox_impl.c"),
+        .flags = &.{ "-std=c99", "-D_XOPEN_SOURCE", "-D_DEFAULT_SOURCE" },
+    });
+    termbox_mod.addIncludePath(b.path("vendor/termbox2"));
+
+    // Add imports to modules that need them
+    // lib_mod needs termbox because src/lib.zig imports it
+    lib_mod.addImport("termbox", termbox_mod);
+
     const deps = CoreDeps{
         .target = target,
         .optimize = optimize,
         .libxev_mod = libxev_mod,
+        .termbox_mod = termbox_mod,
         .lib_mod = lib_mod,
     };
 
@@ -63,7 +81,8 @@ fn addApp(b: *std.Build, deps: CoreDeps) void {
     });
 
     exe.root_module.addImport("xev", deps.libxev_mod);
-    linkTermbox(b, exe);
+    exe.root_module.addImport("termbox", deps.termbox_mod);
+    exe.linkLibC();
 
     // --- Install ---
     b.installArtifact(exe);
@@ -91,7 +110,8 @@ fn addUnitTests(b: *std.Build, deps: CoreDeps) void {
     });
 
     exe_unit_tests.root_module.addImport("xev", deps.libxev_mod);
-    linkTermbox(b, exe_unit_tests);
+    exe_unit_tests.root_module.addImport("termbox", deps.termbox_mod);
+    exe_unit_tests.linkLibC();
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
@@ -120,21 +140,20 @@ fn addHarness(b: *std.Build, deps: CoreDeps) void {
             .root_module = test_mod,
         });
         test_exe.root_module.addImport("xev", deps.libxev_mod);
-        linkTermbox(b, test_exe);
+        test_exe.root_module.addImport("termbox", deps.termbox_mod);
+        test_exe.linkLibC();
 
         b.installArtifact(test_exe);
-    }
-}
 
-fn linkTermbox(b: *std.Build, exe: *std.Build.Step.Compile) void {
-    exe.addCSourceFile(.{
-        .file = b.path("src/ui/termbox_impl.c"),
-        .flags = &.{
-            "-std=c99",
-            "-D_XOPEN_SOURCE",
-            "-D_DEFAULT_SOURCE",
-        },
-    });
-    exe.addIncludePath(b.path("vendor/termbox2"));
-    exe.linkLibC();
+        // Add run step
+        const run_cmd = b.addRunArtifact(test_exe);
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+        const run_step = b.step(
+            b.fmt("run-test-{s}", .{test_name}),
+            b.fmt("Run the {s} harness", .{test_name}),
+        );
+        run_step.dependOn(&run_cmd.step);
+    }
 }
