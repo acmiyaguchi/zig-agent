@@ -41,6 +41,12 @@ pub const TerminalUI = struct {
     height: usize,
     total_input_tokens: u32 = 0,
     total_output_tokens: u32 = 0,
+    mutex: std.Thread.Mutex,
+    
+    // Confirmation state (for cross-thread coordination)
+    waiting_for_confirmation: std.atomic.Value(bool),
+    confirmation_result: std.atomic.Value(bool),
+    confirmation_done: std.atomic.Value(bool),
 
     // Color definitions (using basic 8 colors for compatibility)
     const COLOR_DEFAULT: u64 = tb.TB_DEFAULT;
@@ -67,10 +73,17 @@ pub const TerminalUI = struct {
             .initialized = false,
             .width = 80,
             .height = 24,
+            .mutex = std.Thread.Mutex{},
+            .waiting_for_confirmation = std.atomic.Value(bool).init(false),
+            .confirmation_result = std.atomic.Value(bool).init(false),
+            .confirmation_done = std.atomic.Value(bool).init(false),
         };
     }
 
     pub fn deinit(self: *TerminalUI) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
         // Free all stored line texts
         for (self.output_lines.items) |line| {
             self.allocator.free(line.text);
@@ -85,6 +98,8 @@ pub const TerminalUI = struct {
 
     /// Initialize termbox2 - call this before rendering
     pub fn initTermbox(self: *TerminalUI) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
         try tb.init();
         self.initialized = true;
         self.width = @intCast(tb.width());
@@ -93,6 +108,13 @@ pub const TerminalUI = struct {
 
     /// Add a line to the output buffer
     pub fn addLine(self: *TerminalUI, text: []const u8, line_type: LineType) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        try self.addLineLocked(text, line_type);
+    }
+
+    // Internal version without lock
+    fn addLineLocked(self: *TerminalUI, text: []const u8, line_type: LineType) !void {
         const text_copy = try self.allocator.dupe(u8, text);
         try self.output_lines.append(self.allocator, .{
             .text = text_copy,
@@ -105,8 +127,15 @@ pub const TerminalUI = struct {
 
     /// Append text to the last line (for streaming chunks)
     pub fn appendToLastLine(self: *TerminalUI, text: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        try self.appendToLastLineLocked(text);
+    }
+
+    // Internal version without lock
+    fn appendToLastLineLocked(self: *TerminalUI, text: []const u8) !void {
         if (self.output_lines.items.len == 0) {
-            try self.addLine(text, .assistant);
+            try self.addLineLocked(text, .assistant);
             return;
         }
 
@@ -255,6 +284,12 @@ pub const TerminalUI = struct {
 
     /// Render all output lines with scrolling
     pub fn renderOutput(self: *TerminalUI) !void {
+        // Locked by caller (render)
+        // ... implementation below ...
+        return self.renderOutputLocked();
+    }
+
+    fn renderOutputLocked(self: *TerminalUI) !void {
         if (!self.initialized) return;
 
         try tb.clear();
@@ -300,6 +335,11 @@ pub const TerminalUI = struct {
 
     /// Render the input area at the bottom (supports multi-line wrapping)
     pub fn renderInputLine(self: *TerminalUI) !void {
+        // Locked by caller (render)
+        return self.renderInputLineLocked();
+    }
+
+    fn renderInputLineLocked(self: *TerminalUI) !void {
         if (!self.initialized) return;
 
         const prompt = "> ";
@@ -360,6 +400,12 @@ pub const TerminalUI = struct {
 
     /// Draw a status line (above input)
     pub fn renderStatusLine(self: *TerminalUI, status: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.renderStatusLineLocked(status);
+    }
+    
+    fn renderStatusLineLocked(self: *TerminalUI, status: []const u8) !void {
         if (!self.initialized) return;
         if (self.height < 2) return;
 
@@ -384,6 +430,11 @@ pub const TerminalUI = struct {
 
     /// Render token usage in status area
     pub fn renderTokenStatus(self: *TerminalUI) !void {
+        // Locked by caller (render)
+        return self.renderTokenStatusLocked();
+    }
+    
+    fn renderTokenStatusLocked(self: *TerminalUI) !void {
         if (!self.initialized) return;
         if (self.height < 3) return;
 
@@ -417,16 +468,24 @@ pub const TerminalUI = struct {
 
     /// Full render cycle
     pub fn render(self: *TerminalUI) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.renderLocked();
+    }
+    
+    fn renderLocked(self: *TerminalUI) !void {
         if (!self.initialized) return;
 
-        try self.renderOutput();
-        try self.renderTokenStatus();
-        try self.renderInputLine();
+        try self.renderOutputLocked();
+        try self.renderTokenStatusLocked();
+        try self.renderInputLineLocked();
         try tb.present();
     }
 
     /// Handle terminal resize
     pub fn handleResize(self: *TerminalUI) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
         if (!self.initialized) return;
         self.width = @intCast(tb.width());
         self.height = @intCast(tb.height());
@@ -435,6 +494,9 @@ pub const TerminalUI = struct {
 
     /// Add a character to input buffer (enforces MAX_INPUT_CHARS limit)
     pub fn addInputChar(self: *TerminalUI, char: u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        
         if (self.input_buffer.items.len >= MAX_INPUT_CHARS) {
             return; // At limit, ignore additional input
         }
@@ -444,6 +506,9 @@ pub const TerminalUI = struct {
 
     /// Delete last character from input buffer
     pub fn deleteInputChar(self: *TerminalUI) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        
         if (self.input_buffer.items.len > 0) {
             _ = self.input_buffer.pop();
             self.cursor_pos = self.input_buffer.items.len;
@@ -452,6 +517,9 @@ pub const TerminalUI = struct {
 
     /// Get and clear input buffer
     pub fn getAndClearInput(self: *TerminalUI) ![]const u8 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        
         const input = try self.allocator.dupe(u8, self.input_buffer.items);
         self.input_buffer.clearRetainingCapacity();
         self.cursor_pos = 0;
@@ -460,12 +528,17 @@ pub const TerminalUI = struct {
 
     /// Clear input buffer without returning
     pub fn clearInput(self: *TerminalUI) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
         self.input_buffer.clearRetainingCapacity();
         self.cursor_pos = 0;
     }
 
     /// Scroll up by one page
     pub fn scrollUp(self: *TerminalUI) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        
         const page_size = self.getVisibleLineCount();
         if (self.scroll_offset >= page_size) {
             self.scroll_offset -= page_size;
@@ -476,6 +549,9 @@ pub const TerminalUI = struct {
 
     /// Scroll down by one page
     pub fn scrollDown(self: *TerminalUI) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        
         const page_size = self.getVisibleLineCount();
         const total_wrapped = self.countWrappedLines();
         const max_offset = if (total_wrapped > page_size) total_wrapped - page_size else 0;
@@ -486,6 +562,12 @@ pub const TerminalUI = struct {
     /// Handle an agent update event - this is the callback for Agent
     pub fn handleAgentUpdate(update: agent_types.AgentUpdate, context: *anyopaque) void {
         const self: *TerminalUI = @ptrCast(@alignCast(context));
+        
+        // This function acquires lock multiple times (addLine -> render)
+        // Since std.Thread.Mutex is not recursive, we must be careful.
+        // But here we're calling public methods that handle locking themselves.
+        // As long as we don't hold the lock while calling them, it's fine.
+        // We do NOT hold the lock here.
 
         switch (update) {
             .thought => |t| {
@@ -493,16 +575,8 @@ pub const TerminalUI = struct {
             },
             .message_chunk => |chunk| {
                 // For streaming, append to last assistant line
-                if (self.output_lines.items.len > 0) {
-                    const last = self.output_lines.items[self.output_lines.items.len - 1];
-                    if (last.line_type == .assistant) {
-                        self.appendToLastLine(chunk) catch {};
-                    } else {
-                        self.addLine(chunk, .assistant) catch {};
-                    }
-                } else {
-                    self.addLine(chunk, .assistant) catch {};
-                }
+                // We need to peek at last line, so we need a lock-safe way to do this logic
+                self.appendStreamingChunk(chunk) catch {};
             },
             .tool_call => |tc| {
                 var buf: [512]u8 = undefined;
@@ -538,13 +612,30 @@ pub const TerminalUI = struct {
                 self.addLine(msg, .warning) catch {};
             },
             .usage_update => |usage| {
+                self.mutex.lock();
                 self.total_input_tokens = usage.total_input_tokens;
                 self.total_output_tokens = usage.total_output_tokens;
+                self.mutex.unlock();
             },
         }
 
         // Re-render after update
         self.render() catch {};
+    }
+    
+    // Helper to handle streaming chunk appending logic safely
+    fn appendStreamingChunk(self: *TerminalUI, chunk: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        
+        if (self.output_lines.items.len > 0) {
+            const last = self.output_lines.items[self.output_lines.items.len - 1];
+            if (last.line_type == .assistant) {
+                try self.appendToLastLineLocked(chunk);
+                return;
+            }
+        } 
+        try self.addLineLocked(chunk, .assistant);
     }
 
     /// Add user input as a line (for display after Enter)
@@ -578,36 +669,25 @@ pub const TerminalUI = struct {
         self.addLine(msg, .warning) catch {};
         self.render() catch {};
 
-        // Wait for user input
-        var event: tb.TbEvent = undefined;
-        while (true) {
-            // Block until we get an event
-            if (tb.peekEvent(&event, 100) catch false) {
-                if (event.type == tb.TB_EVENT_KEY) {
-                    // Y/y = confirm
-                    if (event.ch == 'Y' or event.ch == 'y') {
-                        self.addLine("[Confirmed]", .system) catch {};
-                        self.render() catch {};
-                        return true;
-                    }
-                    // N/n/Enter = deny
-                    if (event.ch == 'N' or event.ch == 'n' or event.key == tb.TB_KEY_ENTER) {
-                        self.addLine("[Cancelled]", .warning) catch {};
-                        self.render() catch {};
-                        return false;
-                    }
-                    // Ctrl+C = deny and potentially signal quit (handled by caller)
-                    if (event.key == tb.TB_KEY_CTRL_C) {
-                        self.addLine("[Cancelled]", .warning) catch {};
-                        self.render() catch {};
-                        return false;
-                    }
-                } else if (event.type == tb.TB_EVENT_RESIZE) {
-                    self.handleResize();
-                    self.render() catch {};
-                }
-            }
+        // Signal main thread we are waiting
+        self.confirmation_done.store(false, .release);
+        self.waiting_for_confirmation.store(true, .release);
+
+        // Wait for result
+        while (!self.confirmation_done.load(.acquire)) {
+            std.Thread.sleep(10 * std.time.ns_per_ms);
         }
+
+        const confirmed = self.confirmation_result.load(.acquire);
+
+        if (confirmed) {
+            self.addLine("[Confirmed]", .system) catch {};
+        } else {
+            self.addLine("[Cancelled]", .warning) catch {};
+        }
+        self.render() catch {};
+
+        return confirmed;
     }
 };
 

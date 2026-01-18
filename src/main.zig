@@ -99,31 +99,81 @@ const InteractiveMode = struct {
 
     fn handleKeyEvent(self: *InteractiveMode, event: *tb.TbEvent) void {
         if (event.key == tb.TB_KEY_CTRL_C) {
+            // Check if waiting for confirmation - cancel it
+            if (self.ui.waiting_for_confirmation.load(.acquire)) {
+                self.ui.confirmation_result.store(false, .release);
+                self.ui.confirmation_done.store(true, .release);
+                self.ui.waiting_for_confirmation.store(false, .release);
+                return;
+            }
             self.should_quit = true;
+            return;
+        }
+
+        // Handle confirmation input if waiting
+        if (self.ui.waiting_for_confirmation.load(.acquire)) {
+            if (event.ch == 'Y' or event.ch == 'y') {
+                self.ui.confirmation_result.store(true, .release);
+                self.ui.confirmation_done.store(true, .release);
+                self.ui.waiting_for_confirmation.store(false, .release);
+                return;
+            }
+            if (event.ch == 'N' or event.ch == 'n' or event.key == tb.TB_KEY_ENTER) {
+                self.ui.confirmation_result.store(false, .release);
+                self.ui.confirmation_done.store(true, .release);
+                self.ui.waiting_for_confirmation.store(false, .release);
+                return;
+            }
+            // Ignore other keys while waiting
             return;
         }
 
         if (event.key == tb.TB_KEY_ENTER) {
             // Get input and process it
             const input = self.ui.getAndClearInput() catch return;
-            defer self.allocator.free(input);
-
-            if (input.len == 0) return;
+            if (input.len == 0) {
+                self.allocator.free(input);
+                return;
+            }
 
             // Check for exit commands
             if (std.mem.eql(u8, input, "quit") or std.mem.eql(u8, input, "exit")) {
+                self.allocator.free(input);
                 self.should_quit = true;
+                return;
+            }
+
+            // Check if agent is already running
+            if (self.agent_running.load(.acquire)) {
+                self.ui.addLine("Agent is already running...", .warning) catch {};
+                self.ui.render() catch {};
+                self.allocator.free(input);
                 return;
             }
 
             // Add user input to display
             self.ui.addUserInput(input) catch {};
+            self.ui.render() catch {};
 
-            // Execute agent turn (blocks but streams via callback)
-            self.agent.executeTurn(input) catch |err| {
+            // Join previous thread if it exists
+            if (self.agent_thread) |thread| {
+                thread.join();
+                self.agent_thread = null;
+            }
+
+            // Set running flag
+            self.agent_running.store(true, .release);
+
+            // Spawn thread for agent execution
+            // We pass 'input' which is owned by the thread now.
+            // The thread is responsible for freeing it.
+            self.agent_thread = std.Thread.spawn(.{}, agentThreadWrapper, .{ self, input }) catch |err| {
+                self.agent_running.store(false, .release);
                 var buf: [256]u8 = undefined;
-                const msg = std.fmt.bufPrint(&buf, "Error: {any}", .{err}) catch "Error";
+                const msg = std.fmt.bufPrint(&buf, "Error spawning thread: {any}", .{err}) catch "Error spawning thread";
                 self.ui.addLine(msg, .error_msg) catch {};
+                self.allocator.free(input);
+                return;
             };
 
             return;
@@ -149,6 +199,19 @@ const InteractiveMode = struct {
             self.ui.addInputChar(@intCast(event.ch)) catch {};
         }
     }
+
+    fn agentThreadWrapper(self: *InteractiveMode, input: []const u8) void {
+        defer self.allocator.free(input);
+        defer self.agent_running.store(false, .release);
+
+        self.agent.executeTurn(input) catch |err| {
+            var buf: [256]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "Error: {any}", .{err}) catch "Error";
+            self.ui.addLine(msg, .error_msg) catch {};
+            self.ui.render() catch {};
+        };
+    }
+
 
 };
 
