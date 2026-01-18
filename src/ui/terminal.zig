@@ -1,7 +1,7 @@
 // Terminal UI using termbox2
 const std = @import("std");
 const tb = @import("termbox");
-const agent_types = @import("../agent/types.zig");
+const agent_types = @import("agent").types;
 
 /// Line type for coloring different kinds of output
 const LineType = enum {

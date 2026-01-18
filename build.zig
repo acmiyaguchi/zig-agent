@@ -17,28 +17,42 @@ const CoreDeps = struct {
     libxev_mod: *std.Build.Module,
     lib_mod: *std.Build.Module,
     termbox_mod: *std.Build.Module,
+    api_mod: *std.Build.Module,
+    tools_mod: *std.Build.Module,
+    agent_mod: *std.Build.Module,
 };
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // --- Shared Library Module ---
-    const lib_mod = b.createModule(.{
-        .root_source_file = b.path("src/lib.zig"),
+    // --- Modules ---
+
+    // 1. API - core types and client
+    const api_mod = b.createModule(.{
+        .root_source_file = b.path("src/api/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    // --- Dependencies ---
-    // 1. libxev (Zig module)
-    const libxev_dep = b.dependency("libxev", .{
+    // 2. Tools - tool registry and implementations
+    const tools_mod = b.createModule(.{
+        .root_source_file = b.path("src/tools/root.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const libxev_mod = libxev_dep.module("xev");
+    tools_mod.addImport("api", api_mod);
 
-    // 2. termbox module
+    // 3. Agent - agent core logic
+    const agent_mod = b.createModule(.{
+        .root_source_file = b.path("src/agent/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    agent_mod.addImport("api", api_mod);
+    agent_mod.addImport("tools", tools_mod);
+
+    // 4. Termbox (UI)
     const termbox_mod = b.createModule(.{
         .root_source_file = b.path("src/ui/termbox.zig"),
         .target = target,
@@ -50,9 +64,24 @@ pub fn build(b: *std.Build) void {
     });
     termbox_mod.addIncludePath(b.path("vendor/termbox2"));
 
-    // Add imports to modules that need them
-    // lib_mod needs termbox because src/lib.zig imports it
+    // 5. Shared Library Module (App)
+    const lib_mod = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    lib_mod.addImport("api", api_mod);
+    lib_mod.addImport("tools", tools_mod);
+    lib_mod.addImport("agent", agent_mod);
     lib_mod.addImport("termbox", termbox_mod);
+
+    // --- Dependencies ---
+    // libxev (Zig module)
+    const libxev_dep = b.dependency("libxev", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const libxev_mod = libxev_dep.module("xev");
 
     const deps = CoreDeps{
         .target = target,
@@ -60,6 +89,9 @@ pub fn build(b: *std.Build) void {
         .libxev_mod = libxev_mod,
         .termbox_mod = termbox_mod,
         .lib_mod = lib_mod,
+        .api_mod = api_mod,
+        .tools_mod = tools_mod,
+        .agent_mod = agent_mod,
     };
 
     addApp(b, deps);
@@ -82,6 +114,9 @@ fn addApp(b: *std.Build, deps: CoreDeps) void {
 
     exe.root_module.addImport("xev", deps.libxev_mod);
     exe.root_module.addImport("termbox", deps.termbox_mod);
+    exe.root_module.addImport("api", deps.api_mod);
+    exe.root_module.addImport("tools", deps.tools_mod);
+    exe.root_module.addImport("agent", deps.agent_mod);
     exe.linkLibC();
 
     // --- Install ---
@@ -111,6 +146,9 @@ fn addUnitTests(b: *std.Build, deps: CoreDeps) void {
 
     exe_unit_tests.root_module.addImport("xev", deps.libxev_mod);
     exe_unit_tests.root_module.addImport("termbox", deps.termbox_mod);
+    exe_unit_tests.root_module.addImport("api", deps.api_mod);
+    exe_unit_tests.root_module.addImport("tools", deps.tools_mod);
+    exe_unit_tests.root_module.addImport("agent", deps.agent_mod);
     exe_unit_tests.linkLibC();
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);

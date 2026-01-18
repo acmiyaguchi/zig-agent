@@ -1,9 +1,10 @@
 // Agent Core logic
 const std = @import("std");
-const api_types = @import("../api/types.zig");
+const api = @import("api");
+const api_types = api.types;
 const agent_types = @import("types.zig");
-const client = @import("../api/client.zig");
-const registry = @import("../tools/registry.zig");
+const client = api.client;
+const registry = @import("tools").registry;
 
 /// Debug logging (writes to file)
 fn debugLog(comptime fmt: []const u8, args: anytype) void {

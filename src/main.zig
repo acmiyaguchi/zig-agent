@@ -1,10 +1,12 @@
 // Entry point - Event-driven REPL mode with libxev
 const std = @import("std");
-const api_types = @import("api/types.zig");
-const agent_types = @import("agent/types.zig");
-const client = @import("api/client.zig");
-const tools = @import("tools/pkg.zig");
-const agent_lib = @import("agent/agent.zig");
+const api = @import("api");
+const api_types = api.types;
+const agent_module = @import("agent"); // Renamed
+const agent_types = agent_module.types;
+const client = api.client;
+const tools = @import("tools");
+const agent_lib = agent_module.agent;
 const xev = @import("xev");
 const TerminalUI = @import("ui/terminal.zig").TerminalUI;
 const tb = @import("termbox");
@@ -271,18 +273,8 @@ pub fn main() !void {
 }
 
 test {
-    _ = @import("api/client.zig");
-    _ = @import("api/types.zig");
-    _ = @import("agent/agent.zig");
-    _ = @import("agent/types.zig");
-    _ = @import("tools/registry.zig");
-    _ = @import("tools/read_file.zig");
-    _ = @import("tools/subprocess.zig");
-    _ = @import("tools/list_directory.zig");
-    _ = @import("tools/search_files.zig");
-    _ = @import("tools/write_file.zig");
-    _ = @import("tools/edit_file.zig");
-    _ = @import("tools/run_command.zig");
-    _ = @import("ui/terminal.zig");
-    _ = @import("termbox");
+    std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(api);
+    std.testing.refAllDecls(agent_module);
+    std.testing.refAllDecls(tools);
 }

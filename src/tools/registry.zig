@@ -1,6 +1,6 @@
 // Tool Registry
 const std = @import("std");
-const types = @import("../api/types.zig");
+const types = @import("api").types;
 
 pub const ToolResult = struct {
     success: bool,

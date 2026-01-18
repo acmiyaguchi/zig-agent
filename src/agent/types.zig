@@ -1,5 +1,4 @@
 const std = @import("std");
-const api_types = @import("../api/types.zig");
 
 pub const AgentUpdate = union(enum) {
     thought: []const u8,
