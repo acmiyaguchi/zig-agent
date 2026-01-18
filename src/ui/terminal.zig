@@ -3,6 +3,31 @@ const std = @import("std");
 const tb = @import("termbox");
 const agent_types = @import("agent").types;
 
+pub const Key = struct {
+    pub const CTRL_C = tb.TB_KEY_CTRL_C;
+    pub const ENTER = tb.TB_KEY_ENTER;
+    pub const BACKSPACE = tb.TB_KEY_BACKSPACE;
+    pub const BACKSPACE2 = tb.TB_KEY_BACKSPACE2;
+    pub const ARROW_UP = tb.TB_KEY_ARROW_UP;
+    pub const ARROW_DOWN = tb.TB_KEY_ARROW_DOWN;
+};
+
+pub const EventType = enum {
+    key,
+    resize,
+    mouse,
+    other,
+};
+
+pub const Event = struct {
+    type: EventType,
+    key: u16 = 0,
+    ch: u32 = 0,
+    mod: u8 = 0,
+    w: i32 = 0,
+    h: i32 = 0,
+};
+
 /// Line type for coloring different kinds of output
 const LineType = enum {
     normal,
@@ -104,6 +129,45 @@ pub const TerminalUI = struct {
         self.initialized = true;
         self.width = @intCast(tb.width());
         self.height = @intCast(tb.height());
+    }
+
+    /// Get TTY file descriptor for polling
+    pub fn getTtyFd(self: *TerminalUI) !i32 {
+        _ = self;
+        const fds = try tb.getFds();
+        if (fds.len == 0) return error.NoTtyFd;
+        return fds[0];
+    }
+
+    /// Poll for an event (non-blocking)
+    /// Returns null if no event is available
+    pub fn pollEvent(self: *TerminalUI) !?Event {
+        _ = self;
+        var tb_event: tb.TbEvent = undefined;
+        // 0 timeout means non-blocking
+        const has_event = tb.peekEvent(&tb_event, 0) catch return null;
+        if (!has_event) return null;
+
+        return switch (tb_event.type) {
+            tb.TB_EVENT_KEY => Event{
+                .type = .key,
+                .key = tb_event.key,
+                .ch = tb_event.ch,
+                .mod = tb_event.mod,
+            },
+            tb.TB_EVENT_RESIZE => Event{
+                .type = .resize,
+                .w = tb_event.w,
+                .h = tb_event.h,
+            },
+            tb.TB_EVENT_MOUSE => Event{
+                .type = .mouse,
+                .key = tb_event.key, // Mouse key/button
+                .w = tb_event.x, // x position
+                .h = tb_event.y, // y position
+            },
+            else => Event{ .type = .other },
+        };
     }
 
     /// Add a line to the output buffer

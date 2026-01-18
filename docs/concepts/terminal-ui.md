@@ -469,4 +469,35 @@ See [REFERENCES.md](../REFERENCES.md#terminal-ui) for:
 - vaxis (Zig TUI library)
 - termbox2 (minimal C library)
 - ANSI escape code standards
-- Terminal capability databases
+
+## Abstraction Layer (Current Implementation)
+
+To maintain clean separation between the application logic (`main.zig`) and the underlying TUI library (`termbox`), we define a clear contract in `src/ui/terminal.zig`. This allows the main binary to be agnostic of the specific TUI implementation.
+
+### The Contract
+
+1.  **Event Types**: `TerminalUI` exports platform-agnostic `Event` and `Key` types.
+    ```zig
+    pub const Event = struct { type: EventType, key: u16, ch: u32, ... };
+    pub const Key = struct { pub const CTRL_C = ...; ... };
+    ```
+
+2.  **Event Polling**: `TerminalUI` provides a non-blocking `pollEvent` method.
+    ```zig
+    // In main loop
+    while (ui.pollEvent() catch null) |event| {
+        switch (event.type) {
+            .key => handleKey(event),
+            .resize => ui.handleResize(),
+            ...
+        }
+    }
+    ```
+
+3.  **Event Loop Integration**: `TerminalUI` exposes the TTY file descriptor for integration with async event loops (like `libxev`).
+    ```zig
+    const tty_fd = try ui.getTtyFd();
+    // Use tty_fd with xev.File for non-blocking IO notifications
+    ```
+
+This abstraction ensures that replacing `termbox` with another library (e.g., `vaxis` or raw ANSI) only requires changes within `src/ui/terminal.zig`, keeping `src/main.zig` untouched.

@@ -1,13 +1,13 @@
 // Entry point - Event-driven REPL mode with libxev
 const std = @import("std");
 const api = @import("api");
-const agent_module = @import("agent"); // Renamed
+const agent_module = @import("agent");
 const client = api.client;
 const tools = @import("tools");
 const agent_lib = agent_module.agent;
 const xev = @import("xev");
-const TerminalUI = @import("ui/terminal.zig").TerminalUI;
-const tb = @import("termbox");
+const terminal = @import("ui/terminal.zig");
+const TerminalUI = terminal.TerminalUI;
 
 /// InteractiveMode encapsulates the libxev event loop and termbox input handling
 const InteractiveMode = struct {
@@ -47,8 +47,7 @@ const InteractiveMode = struct {
 
     pub fn run(self: *InteractiveMode) !void {
         // Get termbox TTY fd for input watching
-        const fds = try tb.getFds();
-        const tty_fd = fds[0];
+        const tty_fd = try self.ui.getTtyFd();
 
         // Set up TTY file watcher
         var tty_file = xev.File{ .fd = tty_fd };
@@ -71,12 +70,11 @@ const InteractiveMode = struct {
         const self = self_opt orelse return .disarm;
         _ = result catch return .disarm;
 
-        // Process any available termbox events
-        var event: tb.TbEvent = undefined;
-        while (tb.peekEvent(&event, 0) catch false) {
-            if (event.type == tb.TB_EVENT_KEY) {
-                self.handleKeyEvent(&event);
-            } else if (event.type == tb.TB_EVENT_RESIZE) {
+        // Process any available terminal events
+        while (self.ui.pollEvent() catch null) |event| {
+            if (event.type == .key) {
+                self.handleKeyEvent(event);
+            } else if (event.type == .resize) {
                 self.ui.handleResize();
             }
 
@@ -91,8 +89,9 @@ const InteractiveMode = struct {
         return if (self.should_quit) .disarm else .rearm;
     }
 
-    fn handleKeyEvent(self: *InteractiveMode, event: *tb.TbEvent) void {
-        if (event.key == tb.TB_KEY_CTRL_C) {
+    fn handleKeyEvent(self: *InteractiveMode, event: terminal.Event) void {
+        if (event.key == terminal.Key.CTRL_C) {
+
             // Check if waiting for confirmation - cancel it
             if (self.ui.waiting_for_confirmation.load(.acquire)) {
                 self.ui.confirmation_result.store(false, .release);
@@ -112,7 +111,7 @@ const InteractiveMode = struct {
                 self.ui.waiting_for_confirmation.store(false, .release);
                 return;
             }
-            if (event.ch == 'N' or event.ch == 'n' or event.key == tb.TB_KEY_ENTER) {
+            if (event.ch == 'N' or event.ch == 'n' or event.key == terminal.Key.ENTER) {
                 self.ui.confirmation_result.store(false, .release);
                 self.ui.confirmation_done.store(true, .release);
                 self.ui.waiting_for_confirmation.store(false, .release);
@@ -122,7 +121,8 @@ const InteractiveMode = struct {
             return;
         }
 
-        if (event.key == tb.TB_KEY_ENTER) {
+        if (event.key == terminal.Key.ENTER) {
+
             // Get input and process it
             const input = self.ui.getAndClearInput() catch return;
             if (input.len == 0) {
@@ -173,17 +173,17 @@ const InteractiveMode = struct {
             return;
         }
 
-        if (event.key == tb.TB_KEY_BACKSPACE or event.key == tb.TB_KEY_BACKSPACE2) {
+        if (event.key == terminal.Key.BACKSPACE or event.key == terminal.Key.BACKSPACE2) {
             self.ui.deleteInputChar();
             return;
         }
 
-        if (event.key == tb.TB_KEY_ARROW_UP) {
+        if (event.key == terminal.Key.ARROW_UP) {
             self.ui.scrollUp();
             return;
         }
 
-        if (event.key == tb.TB_KEY_ARROW_DOWN) {
+        if (event.key == terminal.Key.ARROW_DOWN) {
             self.ui.scrollDown();
             return;
         }
