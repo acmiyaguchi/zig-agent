@@ -11,7 +11,7 @@ pub const read_file_tool = registry.Tool{
 
 pub fn initTool(allocator: std.mem.Allocator) !registry.Tool {
     var tool = read_file_tool;
-    
+
     // Define parameters schema
     const parameters_json =
         \\{
@@ -25,7 +25,7 @@ pub fn initTool(allocator: std.mem.Allocator) !registry.Tool {
         \\  "required": ["path"]
         \\}
     ;
-    
+
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, parameters_json, .{});
     // Note: We need to manage the lifecycle of this parsed value.
     // In a real app, the registry or tool would own this.
@@ -72,7 +72,7 @@ pub fn executeReadFile(allocator: std.mem.Allocator, arguments_json: []const u8)
     }
 
     const content = try file.readToEndAlloc(allocator, 1024 * 1024);
-    
+
     return registry.ToolResult{
         .success = true,
         .output = content,
@@ -81,29 +81,28 @@ pub fn executeReadFile(allocator: std.mem.Allocator, arguments_json: []const u8)
 
 test "read_file tool - absolute path check" {
     const allocator = std.testing.allocator;
-    
+
     const result = try executeReadFile(allocator, "{\"path\": \"relative/path.txt\"}");
     defer result.deinit(allocator);
-    
+
     try std.testing.expect(!result.success);
     try std.testing.expectEqualStrings("Error: Path must be absolute.", result.output);
 }
 
 test "read_file tool - success" {
     const allocator = std.testing.allocator;
-    
+
     const tmp_path = "/tmp/zig_agent_test.txt";
     const content = "Hello, Zig Agent!";
     try std.fs.cwd().writeFile(.{ .sub_path = tmp_path, .data = content });
     defer std.fs.cwd().deleteFile(tmp_path) catch {};
-    
+
     const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\"}}", .{tmp_path});
     defer allocator.free(args);
-    
+
     const result = try executeReadFile(allocator, args);
     defer result.deinit(allocator);
-    
+
     try std.testing.expect(result.success);
     try std.testing.expectEqualStrings(content, result.output);
 }
-

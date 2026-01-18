@@ -106,7 +106,7 @@ pub fn print(x: c_int, y: c_int, fg: u64, bg: u64, text: []const u8) !void {
 test "termbox init and basic operations" {
     // Just verify we can call the functions (even if they fail at runtime)
     // In a real CI/headless env, tb_init might fail.
-    
+
     std.debug.print("Attempting to init termbox...\n", .{});
     init() catch |err| {
         std.debug.print("Termbox init failed (expected in headless): {}\n", .{err});
@@ -117,6 +117,6 @@ test "termbox init and basic operations" {
     try clear();
     try print(0, 0, TB_DEFAULT, TB_DEFAULT, "Hello Termbox");
     try present();
-    
+
     // Don't poll event as it blocks
 }

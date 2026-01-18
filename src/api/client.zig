@@ -311,4 +311,3 @@ test "build request" {
 
     try std.testing.expect(std.mem.indexOf(u8, req_json, "anthropic/claude-haiku-4.5") != null);
 }
-

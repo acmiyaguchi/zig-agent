@@ -9,7 +9,7 @@ fn streamCallback(chunk: types.StreamChunk, context: *anyopaque) void {
             std.debug.print("{s}", .{text});
         },
         .tool_call_start => |tc| {
-            std.debug.print("\n[Tool Call Start: {s} (ID: {s})]\n", .{tc.name, tc.id});
+            std.debug.print("\n[Tool Call Start: {s} (ID: {s})]\n", .{ tc.name, tc.id });
         },
         .tool_call_delta => |tc| {
             std.debug.print("{s}", .{tc.arguments});
@@ -22,7 +22,7 @@ fn streamCallback(chunk: types.StreamChunk, context: *anyopaque) void {
             }
         },
         .usage => |u| {
-            std.debug.print("\n[Usage: {d} prompt, {d} completion]\n", .{u.prompt_tokens, u.completion_tokens});
+            std.debug.print("\n[Usage: {d} prompt, {d} completion]\n", .{ u.prompt_tokens, u.completion_tokens });
         },
     }
 }
@@ -68,10 +68,10 @@ pub fn main() !void {
     };
 
     std.debug.print("Sending request with tools (asking about {s})...\n", .{agents_md_path});
-    
+
     // We pass a dummy context since our callback doesn't use it
     var dummy: i32 = 0;
     try api_client.streamChatCompletion(&messages, api_tools, streamCallback, &dummy);
-    
+
     std.debug.print("\nDone.\n", .{});
 }

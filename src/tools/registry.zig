@@ -45,7 +45,6 @@ pub const ToolRegistry = struct {
         try self.tools.append(self.allocator, tool);
     }
 
-
     pub fn find(self: *ToolRegistry, name: []const u8) ?Tool {
         for (self.tools.items) |tool| {
             if (std.mem.eql(u8, tool.name, name)) {

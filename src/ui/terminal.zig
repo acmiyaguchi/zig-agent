@@ -42,7 +42,7 @@ pub const TerminalUI = struct {
     total_input_tokens: u32 = 0,
     total_output_tokens: u32 = 0,
     mutex: std.Thread.Mutex,
-    
+
     // Confirmation state (for cross-thread coordination)
     waiting_for_confirmation: std.atomic.Value(bool),
     confirmation_result: std.atomic.Value(bool),
@@ -404,7 +404,7 @@ pub const TerminalUI = struct {
         defer self.mutex.unlock();
         return self.renderStatusLineLocked(status);
     }
-    
+
     fn renderStatusLineLocked(self: *TerminalUI, status: []const u8) !void {
         if (!self.initialized) return;
         if (self.height < 2) return;
@@ -433,7 +433,7 @@ pub const TerminalUI = struct {
         // Locked by caller (render)
         return self.renderTokenStatusLocked();
     }
-    
+
     fn renderTokenStatusLocked(self: *TerminalUI) !void {
         if (!self.initialized) return;
         if (self.height < 3) return;
@@ -472,7 +472,7 @@ pub const TerminalUI = struct {
         defer self.mutex.unlock();
         return self.renderLocked();
     }
-    
+
     fn renderLocked(self: *TerminalUI) !void {
         if (!self.initialized) return;
 
@@ -496,7 +496,7 @@ pub const TerminalUI = struct {
     pub fn addInputChar(self: *TerminalUI, char: u8) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        
+
         if (self.input_buffer.items.len >= MAX_INPUT_CHARS) {
             return; // At limit, ignore additional input
         }
@@ -508,7 +508,7 @@ pub const TerminalUI = struct {
     pub fn deleteInputChar(self: *TerminalUI) void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        
+
         if (self.input_buffer.items.len > 0) {
             _ = self.input_buffer.pop();
             self.cursor_pos = self.input_buffer.items.len;
@@ -519,7 +519,7 @@ pub const TerminalUI = struct {
     pub fn getAndClearInput(self: *TerminalUI) ![]const u8 {
         self.mutex.lock();
         defer self.mutex.unlock();
-        
+
         const input = try self.allocator.dupe(u8, self.input_buffer.items);
         self.input_buffer.clearRetainingCapacity();
         self.cursor_pos = 0;
@@ -538,7 +538,7 @@ pub const TerminalUI = struct {
     pub fn scrollUp(self: *TerminalUI) void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        
+
         const page_size = self.getVisibleLineCount();
         if (self.scroll_offset >= page_size) {
             self.scroll_offset -= page_size;
@@ -551,7 +551,7 @@ pub const TerminalUI = struct {
     pub fn scrollDown(self: *TerminalUI) void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        
+
         const page_size = self.getVisibleLineCount();
         const total_wrapped = self.countWrappedLines();
         const max_offset = if (total_wrapped > page_size) total_wrapped - page_size else 0;
@@ -562,7 +562,7 @@ pub const TerminalUI = struct {
     /// Handle an agent update event - this is the callback for Agent
     pub fn handleAgentUpdate(update: agent_types.AgentUpdate, context: *anyopaque) void {
         const self: *TerminalUI = @ptrCast(@alignCast(context));
-        
+
         // This function acquires lock multiple times (addLine -> render)
         // Since std.Thread.Mutex is not recursive, we must be careful.
         // But here we're calling public methods that handle locking themselves.
@@ -622,19 +622,19 @@ pub const TerminalUI = struct {
         // Re-render after update
         self.render() catch {};
     }
-    
+
     // Helper to handle streaming chunk appending logic safely
     fn appendStreamingChunk(self: *TerminalUI, chunk: []const u8) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        
+
         if (self.output_lines.items.len > 0) {
             const last = self.output_lines.items[self.output_lines.items.len - 1];
             if (last.line_type == .assistant) {
                 try self.appendToLastLineLocked(chunk);
                 return;
             }
-        } 
+        }
         try self.addLineLocked(chunk, .assistant);
     }
 

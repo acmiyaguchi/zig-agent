@@ -135,7 +135,7 @@ pub const Agent = struct {
                 self.emit(.{ .memory_warning = .{
                     .rss_kb = rss / 1024,
                     .threshold_kb = Agent.MEMORY_WARNING_THRESHOLD / 1024,
-                }});
+                } });
             }
         }
 
@@ -160,14 +160,14 @@ pub const Agent = struct {
 
             var current_tool_calls = std.ArrayList(api_types.ToolCall){};
             defer {
-                 for (current_tool_calls.items) |tc| {
+                for (current_tool_calls.items) |tc| {
                     self.allocator.free(tc.id);
                     self.allocator.free(tc.function.name);
                     self.allocator.free(tc.function.arguments);
-                 }
-                 current_tool_calls.deinit(self.allocator);
+                }
+                current_tool_calls.deinit(self.allocator);
             }
-            
+
             // Helper struct to track partial tool calls during streaming
             const PartialToolCall = struct {
                 index: usize,
@@ -191,8 +191,8 @@ pub const Agent = struct {
                 content: *std.ArrayList(u8),
                 partials: *std.AutoHashMap(usize, PartialToolCall),
             };
-            var ctx = CallbackCtx{ 
-                .agent = self, 
+            var ctx = CallbackCtx{
+                .agent = self,
                 .content = &current_content,
                 .partials = &partial_tool_calls,
             };
@@ -200,9 +200,9 @@ pub const Agent = struct {
             // Stream handler
             const callback = struct {
                 fn call(chunk: api_types.StreamChunk, c: *anyopaque) void {
-                    const context_ptr: *CallbackCtx = @alignCast(@ptrCast(c));
+                    const context_ptr: *CallbackCtx = @ptrCast(@alignCast(c));
                     const agent = context_ptr.agent;
-                    
+
                     switch (chunk) {
                         .content => |text| {
                             context_ptr.content.appendSlice(agent.allocator, text) catch {};
@@ -215,7 +215,7 @@ pub const Agent = struct {
                             ptc.name = std.ArrayList(u8){};
                             ptc.name.?.appendSlice(agent.allocator, tc.name) catch {};
                             ptc.arguments = std.ArrayList(u8){};
-                            
+
                             context_ptr.partials.put(tc.index, ptc) catch {};
                         },
                         .tool_call_delta => |tc| {
@@ -235,7 +235,7 @@ pub const Agent = struct {
                             agent.emit(.{ .usage_update = .{
                                 .total_input_tokens = agent.total_input_tokens,
                                 .total_output_tokens = agent.total_output_tokens,
-                            }});
+                            } });
                         },
                     }
                 }
@@ -246,7 +246,7 @@ pub const Agent = struct {
             debugLog("[agent] streamChatCompletion returned", .{});
 
             // Post-stream processing
-            
+
             // 1. Reconstruct tool calls from partials
             // Simple approach: Iterate map and build tool calls
             var it = partial_tool_calls.iterator();
@@ -256,7 +256,7 @@ pub const Agent = struct {
                     const id = try ptc.id.?.toOwnedSlice(self.allocator);
                     const name = try ptc.name.?.toOwnedSlice(self.allocator);
                     const args = try ptc.arguments.?.toOwnedSlice(self.allocator);
-                    
+
                     try current_tool_calls.append(self.allocator, .{
                         .id = id,
                         .type = "function",
@@ -265,7 +265,7 @@ pub const Agent = struct {
                             .arguments = args,
                         },
                     });
-                    
+
                     // Prevent deinit of these fields in the defer block for partials
                     ptc.id = null;
                     ptc.name = null;
@@ -275,20 +275,20 @@ pub const Agent = struct {
 
             // 2. Add assistant message to history
             const content = if (current_content.items.len > 0) try current_content.toOwnedSlice(self.allocator) else null;
-            
+
             var tcs: ?[]api_types.ToolCall = null;
             if (current_tool_calls.items.len > 0) {
-                 tcs = try self.allocator.alloc(api_types.ToolCall, current_tool_calls.items.len);
-                 for (current_tool_calls.items, 0..) |src, i| {
-                     tcs.?[i] = .{
-                         .id = try self.allocator.dupe(u8, src.id),
-                         .type = "function",
-                         .function = .{
-                             .name = try self.allocator.dupe(u8, src.function.name),
-                             .arguments = try self.allocator.dupe(u8, src.function.arguments),
-                         },
-                     };
-                 }
+                tcs = try self.allocator.alloc(api_types.ToolCall, current_tool_calls.items.len);
+                for (current_tool_calls.items, 0..) |src, i| {
+                    tcs.?[i] = .{
+                        .id = try self.allocator.dupe(u8, src.id),
+                        .type = "function",
+                        .function = .{
+                            .name = try self.allocator.dupe(u8, src.function.name),
+                            .arguments = try self.allocator.dupe(u8, src.function.arguments),
+                        },
+                    };
+                }
             }
 
             const assistant_msg = api_types.Message{
@@ -296,96 +296,96 @@ pub const Agent = struct {
                 .content = content,
                 .tool_calls = tcs,
             };
-            
+
             try self.conversation.addMessage(assistant_msg);
 
             // If we have tool calls, execute them
             if (tcs) |calls| {
-                 // Notify UI
-                 for (calls) |tc| {
-                     self.emit(.{ .tool_call = .{
-                         .id = tc.id,
-                         .name = tc.function.name,
-                         .arguments = tc.function.arguments,
-                     }});
-                 }
-                 
-                 // Execute tools
-                 for (calls) |tc| {
-                     debugLog("[agent] executing tool: {s}", .{tc.function.name});
-                     if (self.tools.find(tc.function.name)) |tool| {
-                         // Check if confirmation is required
-                         if (tool.requires_confirmation) {
-                             debugLog("[agent] tool requires confirmation", .{});
-                             if (self.confirmation_handler) |handler| {
-                                 const confirmed = handler(
-                                     tc.function.name,
-                                     tc.function.arguments,
-                                     self.confirmation_context.?,
-                                 );
-                                 if (!confirmed) {
-                                     // User denied - add cancellation message
-                                     const cancel_msg = try std.fmt.allocPrint(
-                                         self.allocator,
-                                         "Tool execution cancelled by user.",
-                                         .{},
-                                     );
+                // Notify UI
+                for (calls) |tc| {
+                    self.emit(.{ .tool_call = .{
+                        .id = tc.id,
+                        .name = tc.function.name,
+                        .arguments = tc.function.arguments,
+                    } });
+                }
 
-                                     try self.conversation.addMessage(.{
-                                         .role = .tool,
-                                         .content = cancel_msg,
-                                         .tool_call_id = try self.allocator.dupe(u8, tc.id),
-                                         .name = try self.allocator.dupe(u8, tool.name),
-                                     });
+                // Execute tools
+                for (calls) |tc| {
+                    debugLog("[agent] executing tool: {s}", .{tc.function.name});
+                    if (self.tools.find(tc.function.name)) |tool| {
+                        // Check if confirmation is required
+                        if (tool.requires_confirmation) {
+                            debugLog("[agent] tool requires confirmation", .{});
+                            if (self.confirmation_handler) |handler| {
+                                const confirmed = handler(
+                                    tc.function.name,
+                                    tc.function.arguments,
+                                    self.confirmation_context.?,
+                                );
+                                if (!confirmed) {
+                                    // User denied - add cancellation message
+                                    const cancel_msg = try std.fmt.allocPrint(
+                                        self.allocator,
+                                        "Tool execution cancelled by user.",
+                                        .{},
+                                    );
 
-                                     self.emit(.{ .tool_result = .{
-                                         .id = tc.id,
-                                         .output = "Tool execution cancelled by user.",
-                                         .success = false,
-                                     }});
-                                     continue;
-                                 }
-                             }
-                         }
+                                    try self.conversation.addMessage(.{
+                                        .role = .tool,
+                                        .content = cancel_msg,
+                                        .tool_call_id = try self.allocator.dupe(u8, tc.id),
+                                        .name = try self.allocator.dupe(u8, tool.name),
+                                    });
 
-                         debugLog("[agent] calling tool.execute for {s}", .{tc.function.name});
+                                    self.emit(.{ .tool_result = .{
+                                        .id = tc.id,
+                                        .output = "Tool execution cancelled by user.",
+                                        .success = false,
+                                    } });
+                                    continue;
+                                }
+                            }
+                        }
+
+                        debugLog("[agent] calling tool.execute for {s}", .{tc.function.name});
                         const result = tool.execute(self.allocator, tc.function.arguments) catch |err| blk: {
-                             // Handle unexpected error (e.g. OOM) during execution wrapper
-                             // (Actual tool errors are returned as ToolResult with success=false)
-                             // Create a synthetic result for the crash
-                             const err_msg = try std.fmt.allocPrint(self.allocator, "Error executing tool: {any}", .{err});
-                             break :blk registry.ToolResult{
-                                 .success = false,
-                                 .output = err_msg,
-                             };
-                         };
+                            // Handle unexpected error (e.g. OOM) during execution wrapper
+                            // (Actual tool errors are returned as ToolResult with success=false)
+                            // Create a synthetic result for the crash
+                            const err_msg = try std.fmt.allocPrint(self.allocator, "Error executing tool: {any}", .{err});
+                            break :blk registry.ToolResult{
+                                .success = false,
+                                .output = err_msg,
+                            };
+                        };
 
-                         debugLog("[agent] tool.execute returned, success={}", .{result.success});
-                         const output_copy = try self.allocator.dupe(u8, result.output);
+                        debugLog("[agent] tool.execute returned, success={}", .{result.success});
+                        const output_copy = try self.allocator.dupe(u8, result.output);
 
-                         try self.conversation.addMessage(.{
-                             .role = .tool,
-                             .content = output_copy,
-                             .tool_call_id = try self.allocator.dupe(u8, tc.id),
-                             .name = try self.allocator.dupe(u8, tool.name),
-                         });
+                        try self.conversation.addMessage(.{
+                            .role = .tool,
+                            .content = output_copy,
+                            .tool_call_id = try self.allocator.dupe(u8, tc.id),
+                            .name = try self.allocator.dupe(u8, tool.name),
+                        });
 
-                         self.emit(.{ .tool_result = .{
-                             .id = tc.id,
-                             .output = result.output,
-                             .success = result.success,
-                         }});
+                        self.emit(.{ .tool_result = .{
+                            .id = tc.id,
+                            .output = result.output,
+                            .success = result.success,
+                        } });
 
-                         result.deinit(self.allocator);
-                     } else {
-                         // Tool not found
-                         try self.conversation.addMessage(.{
-                             .role = .tool,
-                             .content = try self.allocator.dupe(u8, "Error: Tool not found"),
-                             .tool_call_id = try self.allocator.dupe(u8, tc.id),
-                         });
-                     }
-                 }
+                        result.deinit(self.allocator);
+                    } else {
+                        // Tool not found
+                        try self.conversation.addMessage(.{
+                            .role = .tool,
+                            .content = try self.allocator.dupe(u8, "Error: Tool not found"),
+                            .tool_call_id = try self.allocator.dupe(u8, tc.id),
+                        });
+                    }
+                }
             } else {
                 self.emit(.{ .completion = null });
                 return; // Stop if no tool calls

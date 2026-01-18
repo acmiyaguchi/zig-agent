@@ -147,7 +147,6 @@ pub fn execute(
                 }
             }
         }
-
     }
 
     debugLog("poll loop done after {d} iterations, waiting for process...", .{loop_count});

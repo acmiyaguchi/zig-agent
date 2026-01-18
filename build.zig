@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe = b.addExecutable(.{
-        .name = "zig-agent",
+        .name = "zag",
         .root_module = root_module,
     });
 

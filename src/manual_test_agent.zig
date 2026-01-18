@@ -11,12 +11,12 @@ fn eventHandler(update: agent_types.AgentUpdate, context: *anyopaque) void {
     switch (update) {
         .thought => |t| std.debug.print("Thought: {s}\n", .{t}),
         .message_chunk => |c| std.debug.print("{s}", .{c}),
-        .tool_call => |tc| std.debug.print("\nTool Call: {s}({s})\n", .{tc.name, tc.arguments}),
+        .tool_call => |tc| std.debug.print("\nTool Call: {s}({s})\n", .{ tc.name, tc.arguments }),
         .tool_result => |tr| std.debug.print("Tool Result: {s}\n", .{tr.output}),
         .completion => std.debug.print("\n[Completion]\n", .{}),
         .@"error" => |e| std.debug.print("Error: {s}\n", .{e}),
         .memory_warning => {},
-        .usage_update => |u| std.debug.print("[Tokens: {d} in, {d} out]\n", .{u.total_input_tokens, u.total_output_tokens}),
+        .usage_update => |u| std.debug.print("[Tokens: {d} in, {d} out]\n", .{ u.total_input_tokens, u.total_output_tokens }),
     }
 }
 
@@ -56,8 +56,8 @@ pub fn main() !void {
 
     const prompt = try std.fmt.allocPrint(allocator, "Read {s} and tell me what it says.", .{test_file});
     defer allocator.free(prompt);
-    
+
     std.debug.print("User: {s}\n", .{prompt});
-    
+
     try agent.executeTurn(prompt);
 }
