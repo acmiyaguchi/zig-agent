@@ -9,12 +9,7 @@ const api_types = app.api.types;
 const agent_types = app.agent.types;
 const client = app.api.client;
 const registry = app.api.registry;
-const read_file = app.tools.read_file;
-const list_directory = app.tools.list_directory;
-const search_files = app.tools.search_files;
-const write_file = app.tools.write_file;
-const edit_file = app.tools.edit_file;
-const run_command = app.tools.run_command;
+const tools = app.tools;
 const agent_lib = app.agent.agent;
 
 fn eventHandler(update: agent_types.AgentUpdate, context: *anyopaque) void {
@@ -51,23 +46,16 @@ pub fn main() !void {
     defer tool_registry.deinit();
 
     // Register ALL tools (same as zig-agent)
-    const rf_tool = try read_file.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(rf_tool);
-
-    const ld_tool = try list_directory.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(ld_tool);
-
-    const sf_tool = try search_files.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(sf_tool);
-
-    const wf_tool = try write_file.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(wf_tool);
-
-    const ef_tool = try edit_file.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(ef_tool);
-
-    const rc_tool = try run_command.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(rc_tool);
+    inline for (.{
+        tools.read_file,
+        tools.list_directory,
+        tools.search_files,
+        tools.write_file,
+        tools.edit_file,
+        tools.run_command,
+    }) |tool_mod| {
+        try tool_registry.register(try tool_mod.initTool(tool_registry.arena.allocator()));
+    }
 
     var dummy_ctx: i32 = 0;
     var agent = agent_lib.Agent.init(allocator, &api_client, &tool_registry, eventHandler, &dummy_ctx);
