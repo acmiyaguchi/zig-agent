@@ -3,13 +3,7 @@ const std = @import("std");
 const api_types = @import("api/types.zig");
 const agent_types = @import("agent/types.zig");
 const client = @import("api/client.zig");
-const registry = @import("tools/registry.zig");
-const read_file = @import("tools/read_file.zig");
-const list_directory = @import("tools/list_directory.zig");
-const search_files = @import("tools/search_files.zig");
-const write_file = @import("tools/write_file.zig");
-const edit_file = @import("tools/edit_file.zig");
-const run_command = @import("tools/run_command.zig");
+const tools = @import("tools/pkg.zig");
 const agent_lib = @import("agent/agent.zig");
 const xev = @import("xev");
 const TerminalUI = @import("ui/terminal.zig").TerminalUI;
@@ -211,8 +205,6 @@ const InteractiveMode = struct {
             self.ui.render() catch {};
         };
     }
-
-
 };
 
 pub fn main() !void {
@@ -236,27 +228,20 @@ pub fn main() !void {
     defer api_client.deinit();
 
     // Initialize tool registry
-    var tool_registry = registry.ToolRegistry.init(allocator);
+    var tool_registry = tools.registry.ToolRegistry.init(allocator);
     defer tool_registry.deinit();
 
     // Register tools
-    const rf_tool = try read_file.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(rf_tool);
-
-    const ld_tool = try list_directory.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(ld_tool);
-
-    const sf_tool = try search_files.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(sf_tool);
-
-    const wf_tool = try write_file.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(wf_tool);
-
-    const ef_tool = try edit_file.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(ef_tool);
-
-    const rc_tool = try run_command.initTool(tool_registry.arena.allocator());
-    try tool_registry.register(rc_tool);
+    inline for (.{
+        tools.read_file,
+        tools.list_directory,
+        tools.search_files,
+        tools.write_file,
+        tools.edit_file,
+        tools.run_command,
+    }) |tool_mod| {
+        try tool_registry.register(try tool_mod.initTool(tool_registry.arena.allocator()));
+    }
 
     // Initialize terminal UI
     var ui = TerminalUI.init(allocator);
