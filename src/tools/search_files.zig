@@ -1,6 +1,6 @@
 // search_files tool
 const std = @import("std");
-const registry = @import("registry.zig");
+const registry = @import("api").registry;
 const subprocess = @import("subprocess.zig");
 
 pub fn initTool(allocator: std.mem.Allocator) !registry.Tool {

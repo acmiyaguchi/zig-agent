@@ -8,7 +8,7 @@ const app = @import("app");
 const api_types = app.api.types;
 const agent_types = app.agent.types;
 const client = app.api.client;
-const registry = app.tools.registry;
+const registry = app.api.registry;
 const read_file = app.tools.read_file;
 const agent_lib = app.agent.agent;
 

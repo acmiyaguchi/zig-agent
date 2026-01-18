@@ -1,6 +1,6 @@
 // Subprocess execution helper
 const std = @import("std");
-const registry = @import("registry.zig");
+const registry = @import("api").registry;
 const posix = std.posix;
 
 /// Maximum output size per stream (1MB)

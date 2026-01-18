@@ -1,9 +1,7 @@
 // Entry point - Event-driven REPL mode with libxev
 const std = @import("std");
 const api = @import("api");
-const api_types = api.types;
 const agent_module = @import("agent"); // Renamed
-const agent_types = agent_module.types;
 const client = api.client;
 const tools = @import("tools");
 const agent_lib = agent_module.agent;
@@ -230,7 +228,7 @@ pub fn main() !void {
     defer api_client.deinit();
 
     // Initialize tool registry
-    var tool_registry = tools.registry.ToolRegistry.init(allocator);
+    var tool_registry = api.registry.ToolRegistry.init(allocator);
     defer tool_registry.deinit();
 
     // Register tools

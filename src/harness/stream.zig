@@ -50,7 +50,7 @@ pub fn main() !void {
     defer api_client.deinit();
 
     // Setup tools
-    const registry = app.tools.registry;
+    const registry = app.api.registry;
     const read_file = app.tools.read_file;
     var tool_registry = registry.ToolRegistry.init(allocator);
     defer tool_registry.deinit();

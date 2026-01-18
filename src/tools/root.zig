@@ -1,4 +1,3 @@
-pub const registry = @import("registry.zig");
 pub const read_file = @import("read_file.zig");
 pub const list_directory = @import("list_directory.zig");
 pub const search_files = @import("search_files.zig");

@@ -1,6 +1,6 @@
 // edit_file tool
 const std = @import("std");
-const registry = @import("registry.zig");
+const registry = @import("api").registry;
 
 pub fn initTool(allocator: std.mem.Allocator) !registry.Tool {
     const parameters_json =

@@ -1,6 +1,6 @@
 // read_file tool
 const std = @import("std");
-const registry = @import("registry.zig");
+const registry = @import("api").registry;
 
 pub const read_file_tool = registry.Tool{
     .name = "read_file",
