@@ -6,10 +6,10 @@
 const std = @import("std");
 const app = @import("app");
 const terminal = app.ui.terminal;
-const agent_types = app.agent.types;
 const tb = app.ui.termbox;
 
 pub fn main() !void {
+    // zlinter-disable-next-line no_deprecated - GPA syntax is fine in 0.15.x
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();

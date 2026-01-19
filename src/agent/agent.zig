@@ -55,21 +55,21 @@ pub const Agent = struct {
     api_client: *client.APIClient,
     tools: *registry.ToolRegistry,
     conversation: ConversationState,
-    event_handler: agent_types.AgentEventHandler,
+    eventHandler: agent_types.AgentEventHandler,
     context: *anyopaque,
-    confirmation_handler: ?agent_types.ConfirmationHandler = null,
+    confirmationHandler: ?agent_types.ConfirmationHandler = null,
     confirmation_context: ?*anyopaque = null,
     total_input_tokens: u32 = 0,
     total_output_tokens: u32 = 0,
 
-    const MEMORY_WARNING_THRESHOLD: usize = 40 * 1024 * 1024; // 40MB
-    const MEMORY_REFUSE_THRESHOLD: usize = 45 * 1024 * 1024; // 45MB
+    const memory_warning_threshold: usize = 40 * 1024 * 1024; // 40MB
+    const memory_refuse_threshold: usize = 45 * 1024 * 1024; // 45MB
 
     pub fn init(
         allocator: std.mem.Allocator,
         api_client: *client.APIClient,
         tools: *registry.ToolRegistry,
-        event_handler: agent_types.AgentEventHandler,
+        eventHandler: agent_types.AgentEventHandler,
         context: *anyopaque,
     ) Agent {
         return Agent{
@@ -77,7 +77,7 @@ pub const Agent = struct {
             .api_client = api_client,
             .tools = tools,
             .conversation = ConversationState.init(allocator),
-            .event_handler = event_handler,
+            .eventHandler = eventHandler,
             .context = context,
         };
     }
@@ -91,14 +91,14 @@ pub const Agent = struct {
 
         // Check memory usage
         if (system.getCurrentRSS(self.allocator)) |rss| {
-            if (rss >= Agent.MEMORY_REFUSE_THRESHOLD) {
+            if (rss >= Agent.memory_refuse_threshold) {
                 self.emit(.{ .@"error" = "Memory limit exceeded (45MB). Please restart." });
                 return;
             }
-            if (rss >= Agent.MEMORY_WARNING_THRESHOLD) {
+            if (rss >= Agent.memory_warning_threshold) {
                 self.emit(.{ .memory_warning = .{
                     .rss_kb = rss / 1024,
-                    .threshold_kb = Agent.MEMORY_WARNING_THRESHOLD / 1024,
+                    .threshold_kb = Agent.memory_warning_threshold / 1024,
                 } });
             }
         }
@@ -111,10 +111,10 @@ pub const Agent = struct {
 
         self.emit(.{ .thought = "Thinking..." });
 
-        const MAX_TURNS = 10;
-        var turn: usize = 0;
+        const max_turns = 10;
 
-        while (turn < MAX_TURNS) : (turn += 1) {
+        var turn: usize = 0;
+        while (turn < max_turns) : (turn += 1) {
             const messages = self.conversation.getHistory();
             const tool_defs = try self.tools.toApiDefinitions(self.allocator);
             defer self.allocator.free(tool_defs);
@@ -281,7 +281,7 @@ pub const Agent = struct {
                         // Check if confirmation is required
                         if (tool.requires_confirmation) {
                             logging.debugLog("[agent] tool requires confirmation", .{});
-                            if (self.confirmation_handler) |handler| {
+                            if (self.confirmationHandler) |handler| {
                                 const confirmed = handler(
                                     tc.function.name,
                                     tc.function.arguments,
@@ -358,6 +358,6 @@ pub const Agent = struct {
     }
 
     fn emit(self: *Agent, update: agent_types.AgentUpdate) void {
-        self.event_handler(update, self.context);
+        self.eventHandler(update, self.context);
     }
 };

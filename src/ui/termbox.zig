@@ -12,6 +12,7 @@ pub const TbEvent = extern struct {
     y: i32,
 };
 
+// zlinter-disable declaration_naming - C FFI constants use SCREAMING_SNAKE_CASE convention
 pub const TB_EVENT_KEY: u8 = 1;
 pub const TB_EVENT_RESIZE: u8 = 2;
 pub const TB_EVENT_MOUSE: u8 = 3;
@@ -27,6 +28,7 @@ pub const TB_KEY_ARROW_LEFT: u16 = 0xffff - 20;
 pub const TB_KEY_ARROW_RIGHT: u16 = 0xffff - 21;
 
 pub const TB_DEFAULT: u64 = 0;
+// zlinter-enable declaration_naming
 
 // Function declarations from C
 extern "c" fn tb_init() c_int;

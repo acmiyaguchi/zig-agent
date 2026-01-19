@@ -7,6 +7,7 @@ pub fn debugLog(comptime fmt: []const u8, args: anytype) void {
     defer file.close();
     file.seekFromEnd(0) catch return;
 
+    // zlinter-disable no_deprecated - File I/O deprecations are transitional in 0.15.x
     var buf: [4096]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
     const writer = fbs.writer();
@@ -15,4 +16,5 @@ pub fn debugLog(comptime fmt: []const u8, args: anytype) void {
     writer.print(fmt ++ "\n", args) catch return;
 
     file.writeAll(fbs.getWritten()) catch return;
+    // zlinter-enable no_deprecated
 }

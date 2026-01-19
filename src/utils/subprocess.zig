@@ -7,10 +7,10 @@ const posix = std.posix; // Use std.os.linux or std.posix depending on zig versi
 const logging = @import("logging.zig");
 
 /// Maximum output size per stream (1MB)
-const MAX_OUTPUT_SIZE: usize = 1024 * 1024;
+const max_output_size: usize = 1024 * 1024;
 
 /// Default timeout in seconds
-const DEFAULT_TIMEOUT_SECS: u32 = 30;
+const default_timeout_secs: u32 = 30;
 
 pub const ExecResult = struct {
     stdout: []u8,
@@ -31,7 +31,7 @@ pub fn execute(
     timeout_secs: ?u32,
     working_dir: ?[]const u8,
 ) !ExecResult {
-    const timeout = timeout_secs orelse DEFAULT_TIMEOUT_SECS;
+    const timeout = timeout_secs orelse default_timeout_secs;
 
     logging.debugLog("executing: {s}", .{command});
 
@@ -105,10 +105,10 @@ pub fn execute(
                         if (pfd.fd == stdout_fd) stdout_done = true;
                         if (pfd.fd == stderr_fd) stderr_done = true;
                     } else {
-                        if (pfd.fd == stdout_fd and stdout_buffer.items.len + n <= MAX_OUTPUT_SIZE) {
+                        if (pfd.fd == stdout_fd and stdout_buffer.items.len + n <= max_output_size) {
                             try stdout_buffer.appendSlice(allocator, buf[0..n]);
                         }
-                        if (pfd.fd == stderr_fd and stderr_buffer.items.len + n <= MAX_OUTPUT_SIZE) {
+                        if (pfd.fd == stderr_fd and stderr_buffer.items.len + n <= max_output_size) {
                             try stderr_buffer.appendSlice(allocator, buf[0..n]);
                         }
                     }

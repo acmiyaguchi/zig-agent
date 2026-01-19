@@ -1,5 +1,3 @@
-const std = @import("std");
-
 pub const AgentUpdate = union(enum) {
     thought: []const u8,
     message_chunk: []const u8,

@@ -5,7 +5,6 @@
 
 const std = @import("std");
 const app = @import("app");
-const api_types = app.api.types;
 const agent_types = app.agent.types;
 const client = app.api.client;
 const registry = app.api.registry;
@@ -27,6 +26,7 @@ fn eventHandler(update: agent_types.AgentUpdate, context: *anyopaque) void {
 }
 
 pub fn main() !void {
+    // zlinter-disable-next-line no_deprecated - GPA syntax is fine in 0.15.x
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();

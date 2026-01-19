@@ -3,13 +3,15 @@ const std = @import("std");
 const tb = @import("termbox");
 const agent_types = @import("agent").types;
 
-pub const Key = struct {
+pub const key = struct {
+    // zlinter-disable declaration_naming - C FFI constants use SCREAMING_SNAKE_CASE
     pub const CTRL_C = tb.TB_KEY_CTRL_C;
     pub const ENTER = tb.TB_KEY_ENTER;
     pub const BACKSPACE = tb.TB_KEY_BACKSPACE;
     pub const BACKSPACE2 = tb.TB_KEY_BACKSPACE2;
     pub const ARROW_UP = tb.TB_KEY_ARROW_UP;
     pub const ARROW_DOWN = tb.TB_KEY_ARROW_DOWN;
+    // zlinter-enable declaration_naming
 };
 
 pub const EventType = enum {
@@ -74,19 +76,19 @@ pub const TerminalUI = struct {
     confirmation_done: std.atomic.Value(bool),
 
     // Color definitions (using basic 8 colors for compatibility)
-    const COLOR_DEFAULT: u64 = tb.TB_DEFAULT;
-    const COLOR_USER: u64 = 0x04; // Blue
-    const COLOR_ASSISTANT: u64 = 0x02; // Green
-    const COLOR_THINKING: u64 = 0x06; // Cyan
-    const COLOR_TOOL: u64 = 0x05; // Magenta
-    const COLOR_ERROR: u64 = 0x01; // Red
-    const COLOR_WARNING: u64 = 0x03; // Yellow
-    const COLOR_SYSTEM: u64 = 0x07; // White (dim)
+    const color_default: u64 = tb.TB_DEFAULT;
+    const color_user: u64 = 0x04; // Blue
+    const color_assistant: u64 = 0x02; // Green
+    const color_thinking: u64 = 0x06; // Cyan
+    const color_tool: u64 = 0x05; // Magenta
+    const color_error: u64 = 0x01; // Red
+    const color_warning: u64 = 0x03; // Yellow
+    const color_system: u64 = 0x07; // White (dim)
 
     // Maximum number of screen lines for user input display
-    const MAX_INPUT_WRAP_LINES: usize = 4;
+    const max_input_wrap_lines: usize = 4;
     // Maximum characters for user input (reasonable limit for LLM messages)
-    const MAX_INPUT_CHARS: usize = 2000;
+    const max_input_chars: usize = 2000;
 
     pub fn init(allocator: std.mem.Allocator) TerminalUI {
         return TerminalUI{
@@ -274,7 +276,7 @@ pub const TerminalUI = struct {
         const prompt_len: usize = 2; // "> "
         const available_width = if (self.width > prompt_len) self.width - prompt_len else 1;
         const raw_wraps = (input_len + available_width - 1) / available_width;
-        return @min(raw_wraps, MAX_INPUT_WRAP_LINES);
+        return @min(raw_wraps, max_input_wrap_lines);
     }
 
     /// Split text into segments by newlines and width wrapping
@@ -333,16 +335,16 @@ pub const TerminalUI = struct {
     /// Get color for a line type
     fn getColor(line_type: LineType) u64 {
         return switch (line_type) {
-            .normal => COLOR_DEFAULT,
-            .user_input => COLOR_USER,
-            .assistant => COLOR_ASSISTANT,
-            .thinking => COLOR_THINKING,
-            .tool_call => COLOR_TOOL,
-            .tool_result => COLOR_TOOL,
-            .tool_error => COLOR_ERROR,
-            .error_msg => COLOR_ERROR,
-            .warning => COLOR_WARNING,
-            .system => COLOR_SYSTEM,
+            .normal => color_default,
+            .user_input => color_user,
+            .assistant => color_assistant,
+            .thinking => color_thinking,
+            .tool_call => color_tool,
+            .tool_result => color_tool,
+            .tool_error => color_error,
+            .error_msg => color_error,
+            .warning => color_warning,
+            .system => color_system,
         };
     }
 
@@ -419,13 +421,13 @@ pub const TerminalUI = struct {
 
         // Check if input is truncated (exceeds display limit)
         const total_input_lines = if (input_text.len == 0) 1 else (input_text.len + available_width - 1) / available_width;
-        const is_truncated = total_input_lines > MAX_INPUT_WRAP_LINES;
+        const is_truncated = total_input_lines > max_input_wrap_lines;
 
         // If truncated, show from the end so user sees what they're typing
         var text_start: usize = 0;
         if (is_truncated) {
-            // Show the last MAX_INPUT_WRAP_LINES worth of text
-            const chars_to_show = available_width * MAX_INPUT_WRAP_LINES;
+            // Show the last max_input_wrap_lines worth of text
+            const chars_to_show = available_width * max_input_wrap_lines;
             if (input_text.len > chars_to_show) {
                 text_start = input_text.len - chars_to_show;
             }
@@ -441,9 +443,9 @@ pub const TerminalUI = struct {
             if (line_idx == 0) {
                 // First line gets prompt, possibly with "..." if truncated
                 if (is_truncated) {
-                    try self.drawText(0, row, "...", COLOR_SYSTEM);
+                    try self.drawText(0, row, "...", color_system);
                 } else {
-                    try self.drawText(0, row, prompt, COLOR_USER);
+                    try self.drawText(0, row, prompt, color_user);
                 }
             }
 
@@ -454,7 +456,7 @@ pub const TerminalUI = struct {
 
             if (text_offset < input_text.len) {
                 const segment = input_text[text_offset..segment_end];
-                try self.drawText(col_start, row, segment, COLOR_DEFAULT);
+                try self.drawText(col_start, row, segment, color_default);
             }
 
             text_offset = segment_end;
@@ -476,7 +478,7 @@ pub const TerminalUI = struct {
         const status_row = self.height - 2;
 
         // Draw separator and status
-        try self.drawText(0, status_row, status, COLOR_SYSTEM);
+        try self.drawText(0, status_row, status, color_system);
     }
 
     /// Format token count for display (raw if <1K, K for 1K-999K, M for 1M+)
@@ -514,7 +516,7 @@ pub const TerminalUI = struct {
         // Draw at the right side of the status row
         const status_row = self.height - 2;
         const x = if (self.width > status.len) self.width - status.len - 1 else 0;
-        try self.drawText(x, status_row, status, COLOR_SYSTEM);
+        try self.drawText(x, status_row, status, color_system);
     }
 
     /// Draw text at a position
@@ -556,12 +558,12 @@ pub const TerminalUI = struct {
         self.scrollToBottom();
     }
 
-    /// Add a character to input buffer (enforces MAX_INPUT_CHARS limit)
+    /// Add a character to input buffer (enforces max_input_chars limit)
     pub fn addInputChar(self: *TerminalUI, char: u8) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        if (self.input_buffer.items.len >= MAX_INPUT_CHARS) {
+        if (self.input_buffer.items.len >= max_input_chars) {
             return; // At limit, ignore additional input
         }
         try self.input_buffer.append(self.allocator, char);
@@ -627,6 +629,7 @@ pub const TerminalUI = struct {
     pub fn handleAgentUpdate(update: agent_types.AgentUpdate, context: *anyopaque) void {
         const self: *TerminalUI = @ptrCast(@alignCast(context));
 
+        // zlinter-disable no_swallow_error - UI event handling intentionally ignores errors to keep UI functional
         // This function acquires lock multiple times (addLine -> render)
         // Since std.Thread.Mutex is not recursive, we must be careful.
         // But here we're calling public methods that handle locking themselves.
@@ -685,6 +688,7 @@ pub const TerminalUI = struct {
 
         // Re-render after update
         self.render() catch {};
+        // zlinter-enable no_swallow_error
     }
 
     // Helper to handle streaming chunk appending logic safely
@@ -712,20 +716,14 @@ pub const TerminalUI = struct {
     /// Request confirmation from user for a tool execution
     /// Returns true if confirmed (Y/y), false if denied (N/n/Enter)
     pub fn requestConfirmation(self: *TerminalUI, tool_name: []const u8, arguments: []const u8) bool {
-        // Build confirmation message
-        var msg_buf: [512]u8 = undefined;
-
-        // Truncate arguments for display
-        const max_args_display: usize = 80;
-        const args_display = if (arguments.len > max_args_display)
-            arguments[0..max_args_display]
-        else
-            arguments;
-
-        const suffix = if (arguments.len > max_args_display) "..." else "";
-        const msg = std.fmt.bufPrint(&msg_buf, "Execute {s}({s}{s})? [Y/n] ", .{
+        // zlinter-disable no_swallow_error - UI confirmation flow intentionally ignores errors
+        var buf: [1024]u8 = undefined;
+        const suffix = std.fmt.bufPrint(&buf, " [Y/n] (Tool: {s}, Args: {s})", .{
             tool_name,
-            args_display,
+            arguments,
+        }) catch "";
+
+        const msg = std.fmt.bufPrint(&buf, "Execute tool? {s}", .{
             suffix,
         }) catch "Execute tool? [Y/n] ";
 
@@ -752,6 +750,7 @@ pub const TerminalUI = struct {
         self.render() catch {};
 
         return confirmed;
+        // zlinter-enable no_swallow_error
     }
 };
 
@@ -843,10 +842,10 @@ test "terminal ui input character limit" {
 
     // Add characters up to limit
     var i: usize = 0;
-    while (i < TerminalUI.MAX_INPUT_CHARS + 10) : (i += 1) {
+    while (i < TerminalUI.max_input_chars + 10) : (i += 1) {
         ui.addInputChar('x') catch {};
     }
 
-    // Should be capped at MAX_INPUT_CHARS
-    try std.testing.expectEqual(TerminalUI.MAX_INPUT_CHARS, ui.input_buffer.items.len);
+    // Should be capped at max_input_chars
+    try std.testing.expectEqual(TerminalUI.max_input_chars, ui.input_buffer.items.len);
 }
