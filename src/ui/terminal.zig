@@ -24,10 +24,12 @@ pub const EventType = enum {
 pub const Event = struct {
     type: EventType,
     key: u16 = 0,
+    // zlinter-disable field_naming - FFI mirror fields match C struct TbEvent
     ch: u32 = 0,
     mod: u8 = 0,
     w: i32 = 0,
     h: i32 = 0,
+    // zlinter-enable field_naming
 };
 
 /// Line type for coloring different kinds of output
@@ -244,7 +246,7 @@ pub const TerminalUI = struct {
     /// Count how many screen lines a single output line takes (newline-aware)
     fn countLineWraps(self: *TerminalUI, text: []const u8) usize {
         if (text.len == 0) return 1;
-        const w = if (self.width > 0) self.width else 80;
+        const width = if (self.width > 0) self.width else 80;
 
         var count: usize = 0;
         var line_start: usize = 0;
@@ -259,7 +261,7 @@ pub const TerminalUI = struct {
                 if (line_len == 0) {
                     count += 1;
                 } else {
-                    count += (line_len + w - 1) / w;
+                    count += (line_len + width - 1) / width;
                 }
                 line_start = i + 1;
             }
@@ -282,11 +284,16 @@ pub const TerminalUI = struct {
     /// Split text into segments by newlines and width wrapping
     /// Caller must deinit the returned ArrayList
     fn splitTextIntoSegments(self: *TerminalUI, text: []const u8) std.ArrayList(TextSegment) {
+        const utils = @import("utils");
+        const logging = utils.logging;
+
         var segments = std.ArrayList(TextSegment){};
-        const w = if (self.width > 0) self.width else 80;
+        const width = if (self.width > 0) self.width else 80;
 
         if (text.len == 0) {
-            segments.append(self.allocator, .{ .text = "", .is_continuation = false }) catch {};
+            segments.append(self.allocator, .{ .text = "", .is_continuation = false }) catch |err| {
+                logging.debugLog("Failed to append empty segment: {any}", .{err});
+            };
             return segments;
         }
 
@@ -302,16 +309,20 @@ pub const TerminalUI = struct {
 
                 // Width-wrap this logical line
                 if (line.len == 0) {
-                    segments.append(self.allocator, .{ .text = "", .is_continuation = false }) catch {};
+                    segments.append(self.allocator, .{ .text = "", .is_continuation = false }) catch |err| {
+                        logging.debugLog("Failed to append empty line segment: {any}", .{err});
+                    };
                 } else {
                     var offset: usize = 0;
                     var first_segment = true;
                     while (offset < line.len) {
-                        const end = @min(offset + w, line.len);
+                        const end = @min(offset + width, line.len);
                         segments.append(self.allocator, .{
                             .text = line[offset..end],
                             .is_continuation = !first_segment,
-                        }) catch {};
+                        }) catch |err| {
+                            logging.debugLog("Failed to append line segment: {any}", .{err});
+                        };
                         offset = end;
                         first_segment = false;
                     }
@@ -486,11 +497,11 @@ pub const TerminalUI = struct {
         if (count < 1000) {
             return std.fmt.bufPrint(buf, "{d}", .{count}) catch "?";
         } else if (count < 1_000_000) {
-            const k = @as(f64, @floatFromInt(count)) / 1000.0;
-            return std.fmt.bufPrint(buf, "{d:.1}K", .{k}) catch "?K";
+            const kilo = @as(f64, @floatFromInt(count)) / 1000.0;
+            return std.fmt.bufPrint(buf, "{d:.1}K", .{kilo}) catch "?K";
         } else {
-            const m = @as(f64, @floatFromInt(count)) / 1_000_000.0;
-            return std.fmt.bufPrint(buf, "{d:.1}M", .{m}) catch "?M";
+            const mega = @as(f64, @floatFromInt(count)) / 1_000_000.0;
+            return std.fmt.bufPrint(buf, "{d:.1}M", .{mega}) catch "?M";
         }
     }
 
@@ -757,95 +768,95 @@ pub const TerminalUI = struct {
 // Tests
 test "terminal ui init and deinit" {
     const allocator = std.testing.allocator;
-    var ui = TerminalUI.init(allocator);
-    defer ui.deinit();
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
 
-    try std.testing.expect(!ui.initialized);
-    try std.testing.expectEqual(@as(usize, 0), ui.output_lines.items.len);
+    try std.testing.expect(!terminal_ui.initialized);
+    try std.testing.expectEqual(@as(usize, 0), terminal_ui.output_lines.items.len);
 }
 
 test "terminal ui add lines" {
     const allocator = std.testing.allocator;
-    var ui = TerminalUI.init(allocator);
-    defer ui.deinit();
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
 
-    try ui.addLine("Hello", .normal);
-    try ui.addLine("World", .assistant);
+    try terminal_ui.addLine("Hello", .normal);
+    try terminal_ui.addLine("World", .assistant);
 
-    try std.testing.expectEqual(@as(usize, 2), ui.output_lines.items.len);
-    try std.testing.expectEqualStrings("Hello", ui.output_lines.items[0].text);
-    try std.testing.expectEqualStrings("World", ui.output_lines.items[1].text);
+    try std.testing.expectEqual(@as(usize, 2), terminal_ui.output_lines.items.len);
+    try std.testing.expectEqualStrings("Hello", terminal_ui.output_lines.items[0].text);
+    try std.testing.expectEqualStrings("World", terminal_ui.output_lines.items[1].text);
 }
 
 test "terminal ui append to last line" {
     const allocator = std.testing.allocator;
-    var ui = TerminalUI.init(allocator);
-    defer ui.deinit();
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
 
-    try ui.addLine("Hello", .assistant);
-    try ui.appendToLastLine(" World");
+    try terminal_ui.addLine("Hello", .assistant);
+    try terminal_ui.appendToLastLine(" World");
 
-    try std.testing.expectEqual(@as(usize, 1), ui.output_lines.items.len);
-    try std.testing.expectEqualStrings("Hello World", ui.output_lines.items[0].text);
+    try std.testing.expectEqual(@as(usize, 1), terminal_ui.output_lines.items.len);
+    try std.testing.expectEqualStrings("Hello World", terminal_ui.output_lines.items[0].text);
 }
 
 test "terminal ui input buffer" {
     const allocator = std.testing.allocator;
-    var ui = TerminalUI.init(allocator);
-    defer ui.deinit();
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
 
-    try ui.addInputChar('h');
-    try ui.addInputChar('i');
+    try terminal_ui.addInputChar('h');
+    try terminal_ui.addInputChar('i');
 
-    try std.testing.expectEqualStrings("hi", ui.input_buffer.items);
+    try std.testing.expectEqualStrings("hi", terminal_ui.input_buffer.items);
 
-    ui.deleteInputChar();
-    try std.testing.expectEqualStrings("h", ui.input_buffer.items);
+    terminal_ui.deleteInputChar();
+    try std.testing.expectEqualStrings("h", terminal_ui.input_buffer.items);
 
-    const input = try ui.getAndClearInput();
+    const input = try terminal_ui.getAndClearInput();
     defer allocator.free(input);
 
     try std.testing.expectEqualStrings("h", input);
-    try std.testing.expectEqual(@as(usize, 0), ui.input_buffer.items.len);
+    try std.testing.expectEqual(@as(usize, 0), terminal_ui.input_buffer.items.len);
 }
 
 test "terminal ui line wrapping count" {
     const allocator = std.testing.allocator;
-    var ui = TerminalUI.init(allocator);
-    defer ui.deinit();
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
 
-    ui.width = 10; // Small width for testing
+    terminal_ui.width = 10; // Small width for testing
 
     // Empty line = 1 screen line
-    try std.testing.expectEqual(@as(usize, 1), ui.countLineWraps(""));
+    try std.testing.expectEqual(@as(usize, 1), terminal_ui.countLineWraps(""));
 
     // Short line = 1 screen line
-    try std.testing.expectEqual(@as(usize, 1), ui.countLineWraps("hello"));
+    try std.testing.expectEqual(@as(usize, 1), terminal_ui.countLineWraps("hello"));
 
     // Exactly width = 1 screen line
-    try std.testing.expectEqual(@as(usize, 1), ui.countLineWraps("0123456789"));
+    try std.testing.expectEqual(@as(usize, 1), terminal_ui.countLineWraps("0123456789"));
 
     // Just over width = 2 screen lines
-    try std.testing.expectEqual(@as(usize, 2), ui.countLineWraps("01234567890"));
+    try std.testing.expectEqual(@as(usize, 2), terminal_ui.countLineWraps("01234567890"));
 
     // Long line = 3 screen lines (output lines are NOT capped)
-    try std.testing.expectEqual(@as(usize, 3), ui.countLineWraps("012345678901234567890123456789"));
+    try std.testing.expectEqual(@as(usize, 3), terminal_ui.countLineWraps("012345678901234567890123456789"));
 
     // Very long output line wraps fully (no cap on output)
-    try std.testing.expectEqual(@as(usize, 7), ui.countLineWraps("0123456789012345678901234567890123456789012345678901234567890"));
+    try std.testing.expectEqual(@as(usize, 7), terminal_ui.countLineWraps("0123456789012345678901234567890123456789012345678901234567890"));
 }
 
 test "terminal ui input character limit" {
     const allocator = std.testing.allocator;
-    var ui = TerminalUI.init(allocator);
-    defer ui.deinit();
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
 
     // Add characters up to limit
     var i: usize = 0;
     while (i < TerminalUI.max_input_chars + 10) : (i += 1) {
-        ui.addInputChar('x') catch {};
+        terminal_ui.addInputChar('x') catch {};
     }
 
     // Should be capped at max_input_chars
-    try std.testing.expectEqual(TerminalUI.max_input_chars, ui.input_buffer.items.len);
+    try std.testing.expectEqual(TerminalUI.max_input_chars, terminal_ui.input_buffer.items.len);
 }

@@ -12,6 +12,7 @@ const TerminalUI = terminal.TerminalUI;
 /// InteractiveMode encapsulates the libxev event loop and termbox input handling
 const InteractiveMode = struct {
     allocator: std.mem.Allocator,
+    // zlinter-disable-next-line field_naming - clear abbreviation for terminal_ui
     ui: *TerminalUI,
     agent: *agent_lib.Agent,
     loop: xev.Loop,
@@ -252,9 +253,9 @@ pub fn main() !void {
     }
 
     // Initialize terminal UI
-    var ui = TerminalUI.init(allocator);
-    try ui.initTermbox();
-    defer ui.deinit();
+    var terminal_ui = TerminalUI.init(allocator);
+    try terminal_ui.initTermbox();
+    defer terminal_ui.deinit();
 
     // Confirmation handler wrapper
     const confirmationHandler = struct {
@@ -265,13 +266,13 @@ pub fn main() !void {
     }.handler;
 
     // Initialize agent with terminal UI as event handler
-    var agent = agent_lib.Agent.init(allocator, &api_client, &tool_registry, TerminalUI.handleAgentUpdate, &ui);
+    var agent = agent_lib.Agent.init(allocator, &api_client, &tool_registry, TerminalUI.handleAgentUpdate, &terminal_ui);
     agent.confirmationHandler = confirmationHandler;
-    agent.confirmation_context = &ui;
+    agent.confirmation_context = &terminal_ui;
     defer agent.deinit();
 
     // Initialize interactive mode with event loop
-    var interactive_mode = try InteractiveMode.init(allocator, &ui, &agent);
+    var interactive_mode = try InteractiveMode.init(allocator, &terminal_ui, &agent);
     defer interactive_mode.deinit();
 
     // Run the event loop

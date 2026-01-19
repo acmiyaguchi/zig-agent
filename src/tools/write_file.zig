@@ -64,6 +64,7 @@ fn executeWriteFile(allocator: std.mem.Allocator, arguments_json: []const u8) an
     };
     defer file.close();
 
+    // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
     file.writeAll(content) catch |err| {
         return registry.ToolResult{
             .success = false,
@@ -104,6 +105,7 @@ test "write_file success" {
     // Verify file contents
     const file = try std.fs.openFileAbsolute(tmp_path, .{});
     defer file.close();
+    // zlinter-disable-next-line no_deprecated - File.readToEndAlloc is valid in Zig 0.15.x
     const content = try file.readToEndAlloc(allocator, 1024);
     defer allocator.free(content);
     try std.testing.expectEqualStrings("hello world", content);

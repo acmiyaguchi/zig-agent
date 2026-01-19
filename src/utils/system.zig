@@ -7,6 +7,7 @@ pub fn getCurrentRSS(allocator: std.mem.Allocator) ?usize {
     const file = std.fs.openFileAbsolute(statm_path, .{}) catch return null;
     defer file.close();
 
+    // zlinter-disable-next-line no_deprecated - File.readToEndAlloc is valid in Zig 0.15.x
     const content = file.readToEndAlloc(allocator, 1024) catch return null;
     defer allocator.free(content);
 

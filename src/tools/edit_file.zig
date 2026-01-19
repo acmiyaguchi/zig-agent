@@ -85,6 +85,7 @@ fn executeEditFile(allocator: std.mem.Allocator, arguments_json: []const u8) any
         };
     }
 
+    // zlinter-disable-next-line no_deprecated - File.readToEndAlloc is valid in Zig 0.15.x
     const content = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch |err| {
         file.close();
         return registry.ToolResult{
@@ -135,6 +136,7 @@ fn executeEditFile(allocator: std.mem.Allocator, arguments_json: []const u8) any
     };
     defer out_file.close();
 
+    // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
     out_file.writeAll(new_content) catch |err| {
         return registry.ToolResult{
             .success = false,
@@ -166,9 +168,10 @@ test "edit_file success" {
 
     // Create initial file
     {
-        const f = try std.fs.createFileAbsolute(tmp_path, .{});
-        defer f.close();
-        try f.writeAll("hello world");
+        const file = try std.fs.createFileAbsolute(tmp_path, .{});
+        defer file.close();
+        // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
+        try file.writeAll("hello world");
     }
 
     const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\", \"old_text\": \"world\", \"new_text\": \"zig\"}}", .{tmp_path});
@@ -182,6 +185,7 @@ test "edit_file success" {
     // Verify file contents
     const file = try std.fs.openFileAbsolute(tmp_path, .{});
     defer file.close();
+    // zlinter-disable-next-line no_deprecated - File.readToEndAlloc is valid in Zig 0.15.x
     const content = try file.readToEndAlloc(allocator, 1024);
     defer allocator.free(content);
     try std.testing.expectEqualStrings("hello zig", content);
@@ -195,9 +199,10 @@ test "edit_file not found" {
 
     // Create file with content that doesn't match
     {
-        const f = try std.fs.createFileAbsolute(tmp_path, .{});
-        defer f.close();
-        try f.writeAll("hello world");
+        const file = try std.fs.createFileAbsolute(tmp_path, .{});
+        defer file.close();
+        // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
+        try file.writeAll("hello world");
     }
 
     const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\", \"old_text\": \"foo\", \"new_text\": \"bar\"}}", .{tmp_path});

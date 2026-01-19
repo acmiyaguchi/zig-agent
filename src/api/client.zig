@@ -11,6 +11,7 @@ pub const SSEEvent = union(enum) {
 };
 
 pub const SSEParser = struct {
+    // zlinter-disable-next-line no_deprecated - ArrayList is preferred over ArrayListUnmanaged in 0.15.x
     buffer: std.ArrayListUnmanaged(u8),
     allocator: std.mem.Allocator,
     consumed: usize = 0,
@@ -164,6 +165,7 @@ pub const APIClient = struct {
         // Write payload to stdin
         if (child.stdin) |stdin| {
             logging.debugLog("writing payload to curl stdin...", .{});
+            // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
             stdin.writeAll(payload) catch |err| {
                 logging.debugLog("failed to write to stdin: {any}", .{err});
                 return error.CurlWriteFailed;
@@ -182,23 +184,25 @@ pub const APIClient = struct {
             logging.debugLog("entering read loop", .{});
 
             while (true) {
-                const n = stdout.read(&read_buf) catch |err| {
+                const bytes_read = stdout.read(&read_buf) catch |err| {
                     logging.debugLog("read error: {any}", .{err});
                     break;
                 };
-                if (n == 0) {
+                if (bytes_read == 0) {
                     logging.debugLog("EOF from curl", .{});
                     break;
                 }
 
-                logging.debugLog("read {d} bytes from curl", .{n});
-                try parser.push(read_buf[0..n]);
+                logging.debugLog("read {d} bytes from curl", .{bytes_read});
+                try parser.push(read_buf[0..bytes_read]);
 
                 while (try parser.next()) |ev| {
                     switch (ev) {
                         .done => {
                             logging.debugLog("received [DONE]", .{});
-                            _ = child.wait() catch {};
+                            _ = child.wait() catch |err| {
+                                logging.debugLog("Failed to wait for curl process: {any}", .{err});
+                            };
                             return;
                         },
                         .json => |json| {

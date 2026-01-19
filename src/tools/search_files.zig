@@ -127,9 +127,10 @@ test "search_files success" {
     defer std.fs.deleteTreeAbsolute(tmp_dir) catch {};
 
     {
-        const f = try std.fs.createFileAbsolute(tmp_file, .{});
-        defer f.close();
-        try f.writeAll("hello world\nfoo bar\nhello again\n");
+        const file = try std.fs.createFileAbsolute(tmp_file, .{});
+        defer file.close();
+        // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
+        try file.writeAll("hello world\nfoo bar\nhello again\n");
     }
 
     const args = try std.fmt.allocPrint(allocator, "{{\"pattern\": \"hello\", \"path\": \"{s}\"}}", .{tmp_dir});
@@ -154,9 +155,10 @@ test "search_files no match" {
     defer std.fs.deleteTreeAbsolute(tmp_dir) catch {};
 
     {
-        const f = try std.fs.createFileAbsolute(tmp_file, .{});
-        defer f.close();
-        try f.writeAll("hello world\n");
+        const file = try std.fs.createFileAbsolute(tmp_file, .{});
+        defer file.close();
+        // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
+        try file.writeAll("hello world\n");
     }
 
     const args = try std.fmt.allocPrint(allocator, "{{\"pattern\": \"nonexistent_pattern_xyz\", \"path\": \"{s}\"}}", .{tmp_dir});

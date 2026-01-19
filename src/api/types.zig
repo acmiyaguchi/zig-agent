@@ -41,6 +41,7 @@ pub const ChatCompletionRequest = struct {
 };
 
 pub const ToolCall = struct {
+    // zlinter-disable-next-line field_naming - matches API response JSON structure
     id: []const u8,
     type: []const u8 = "function",
     function: struct {
@@ -56,6 +57,7 @@ pub const UsageInfo = struct {
 };
 
 pub const ChatCompletionChunk = struct {
+    // zlinter-disable-next-line field_naming - matches API response JSON structure
     id: []const u8,
     object: []const u8,
     created: i64,
@@ -67,6 +69,7 @@ pub const ChatCompletionChunk = struct {
             content: ?[]const u8 = null,
             tool_calls: ?[]const struct {
                 index: usize,
+                // zlinter-disable-next-line field_naming - matches API response JSON structure
                 id: ?[]const u8 = null,
                 type: ?[]const u8 = null,
                 function: ?struct {
@@ -84,6 +87,7 @@ pub const StreamChunk = union(enum) {
     content: []const u8,
     tool_call_start: struct {
         index: usize,
+        // zlinter-disable-next-line field_naming - matches API response JSON structure
         id: []const u8,
         name: []const u8,
     },

@@ -55,9 +55,10 @@ pub fn main() !void {
     // Simple test - create a tiny test file
     const test_file = "/tmp/zig-agent-test.txt";
     {
-        const f = try std.fs.cwd().createFile(test_file, .{});
-        defer f.close();
-        try f.writeAll("Hello from test file!");
+        const file = try std.fs.cwd().createFile(test_file, .{});
+        defer file.close();
+        // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
+        try file.writeAll("Hello from test file!");
     }
 
     const prompt = try std.fmt.allocPrint(allocator, "Read {s} and tell me what it says.", .{test_file});

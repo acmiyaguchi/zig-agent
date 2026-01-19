@@ -135,6 +135,7 @@ pub const Agent = struct {
             // Helper struct to track partial tool calls during streaming
             const PartialToolCall = struct {
                 index: usize,
+                // zlinter-disable-next-line field_naming - matches API response structure
                 id: ?std.ArrayList(u8) = null,
                 name: ?std.ArrayList(u8) = null,
                 arguments: ?std.ArrayList(u8) = null,
@@ -169,23 +170,33 @@ pub const Agent = struct {
 
                     switch (chunk) {
                         .content => |text| {
-                            context_ptr.content.appendSlice(agent.allocator, text) catch {};
+                            context_ptr.content.appendSlice(agent.allocator, text) catch |err| {
+                                logging.debugLog("Failed to append content chunk: {any}", .{err});
+                            };
                             agent.emit(.{ .message_chunk = text });
                         },
                         .tool_call_start => |tc| {
                             var ptc = PartialToolCall{ .index = tc.index };
                             ptc.id = std.ArrayList(u8){};
-                            ptc.id.?.appendSlice(agent.allocator, tc.id) catch {};
+                            ptc.id.?.appendSlice(agent.allocator, tc.id) catch |err| {
+                                logging.debugLog("Failed to append tool call id: {any}", .{err});
+                            };
                             ptc.name = std.ArrayList(u8){};
-                            ptc.name.?.appendSlice(agent.allocator, tc.name) catch {};
+                            ptc.name.?.appendSlice(agent.allocator, tc.name) catch |err| {
+                                logging.debugLog("Failed to append tool call name: {any}", .{err});
+                            };
                             ptc.arguments = std.ArrayList(u8){};
 
-                            context_ptr.partials.put(tc.index, ptc) catch {};
+                            context_ptr.partials.put(tc.index, ptc) catch |err| {
+                                logging.debugLog("Failed to store partial tool call: {any}", .{err});
+                            };
                         },
                         .tool_call_delta => |tc| {
                             if (context_ptr.partials.getPtr(tc.index)) |ptc| {
                                 if (ptc.arguments) |*args| {
-                                    args.appendSlice(agent.allocator, tc.arguments) catch {};
+                                    args.appendSlice(agent.allocator, tc.arguments) catch |err| {
+                                        logging.debugLog("Failed to append tool call arguments: {any}", .{err});
+                                    };
                                 }
                             }
                         },
@@ -217,12 +228,12 @@ pub const Agent = struct {
             while (it.next()) |entry| {
                 const ptc = entry.value_ptr;
                 if (ptc.id != null and ptc.name != null and ptc.arguments != null) {
-                    const id = try ptc.id.?.toOwnedSlice(self.allocator);
+                    const tool_id = try ptc.id.?.toOwnedSlice(self.allocator);
                     const name = try ptc.name.?.toOwnedSlice(self.allocator);
                     const args = try ptc.arguments.?.toOwnedSlice(self.allocator);
 
                     try current_tool_calls.append(self.allocator, .{
-                        .id = id,
+                        .id = tool_id,
                         .type = "function",
                         .function = .{
                             .name = name,

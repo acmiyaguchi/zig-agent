@@ -1,6 +1,7 @@
 // Termbox2 bindings
 const std = @import("std");
 
+// zlinter-disable field_naming - C FFI struct fields must match exact C layout
 pub const TbEvent = extern struct {
     type: u8,
     mod: u8,
@@ -11,6 +12,7 @@ pub const TbEvent = extern struct {
     x: i32,
     y: i32,
 };
+// zlinter-enable field_naming
 
 // zlinter-disable declaration_naming - C FFI constants use SCREAMING_SNAKE_CASE convention
 pub const TB_EVENT_KEY: u8 = 1;
@@ -98,10 +100,10 @@ pub fn setCell(x: c_int, y: c_int, ch: u32, fg: u64, bg: u64) !void {
 }
 
 pub fn print(x: c_int, y: c_int, fg: u64, bg: u64, text: []const u8) !void {
-    var cx = x;
+    var cursor_x = x;
     for (text) |char| {
-        try setCell(cx, y, char, fg, bg);
-        cx += 1;
+        try setCell(cursor_x, y, char, fg, bg);
+        cursor_x += 1;
     }
 }
 

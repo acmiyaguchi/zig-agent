@@ -70,8 +70,12 @@ pub fn execute(
     while (!stdout_done or !stderr_done) {
         const elapsed = std.time.milliTimestamp() - start_time;
         if (elapsed >= timeout_ms) {
-            _ = child.kill() catch {};
-            _ = child.wait() catch {};
+            _ = child.kill() catch |err| {
+                logging.debugLog("Failed to kill timed-out process: {any}", .{err});
+            };
+            _ = child.wait() catch |err| {
+                logging.debugLog("Failed to wait for killed process: {any}", .{err});
+            };
             return ExecResult{
                 .stdout = try stdout_buffer.toOwnedSlice(allocator),
                 .stderr = try stderr_buffer.toOwnedSlice(allocator),
@@ -100,16 +104,16 @@ pub fn execute(
             for (poll_fds[0..poll_count]) |pfd| {
                 if (pfd.revents & posix.POLL.IN != 0) {
                     var buf: [4096]u8 = undefined;
-                    const n = try (std.fs.File{ .handle = pfd.fd }).read(&buf);
-                    if (n == 0) {
+                    const bytes_read = try (std.fs.File{ .handle = pfd.fd }).read(&buf);
+                    if (bytes_read == 0) {
                         if (pfd.fd == stdout_fd) stdout_done = true;
                         if (pfd.fd == stderr_fd) stderr_done = true;
                     } else {
-                        if (pfd.fd == stdout_fd and stdout_buffer.items.len + n <= max_output_size) {
-                            try stdout_buffer.appendSlice(allocator, buf[0..n]);
+                        if (pfd.fd == stdout_fd and stdout_buffer.items.len + bytes_read <= max_output_size) {
+                            try stdout_buffer.appendSlice(allocator, buf[0..bytes_read]);
                         }
-                        if (pfd.fd == stderr_fd and stderr_buffer.items.len + n <= max_output_size) {
-                            try stderr_buffer.appendSlice(allocator, buf[0..n]);
+                        if (pfd.fd == stderr_fd and stderr_buffer.items.len + bytes_read <= max_output_size) {
+                            try stderr_buffer.appendSlice(allocator, buf[0..bytes_read]);
                         }
                     }
                 }

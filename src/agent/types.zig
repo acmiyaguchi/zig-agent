@@ -2,11 +2,13 @@ pub const AgentUpdate = union(enum) {
     thought: []const u8,
     message_chunk: []const u8,
     tool_call: struct {
+        // zlinter-disable-next-line field_naming - matches tool call response structure
         id: []const u8,
         name: []const u8,
         arguments: []const u8,
     },
     tool_result: struct {
+        // zlinter-disable-next-line field_naming - matches tool result structure
         id: []const u8,
         output: []const u8,
         success: bool,

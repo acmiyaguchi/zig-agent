@@ -7,6 +7,8 @@ const std = @import("std");
 const app = @import("app");
 const terminal = app.ui.terminal;
 const tb = app.ui.termbox;
+const utils = @import("utils");
+const logging = utils.logging;
 
 pub fn main() !void {
     // zlinter-disable-next-line no_deprecated - GPA syntax is fine in 0.15.x
@@ -78,7 +80,9 @@ pub fn main() !void {
                     defer allocator.free(input);
 
                     if (input.len > 0) {
-                        ui.addUserInput(input) catch {};
+                        ui.addUserInput(input) catch |err| {
+                            logging.debugLog("Failed to add user input: {any}", .{err});
+                        };
 
                         // Check for quit command
                         if (std.mem.eql(u8, input, "quit") or std.mem.eql(u8, input, "exit")) {
@@ -87,8 +91,12 @@ pub fn main() !void {
                             // Echo back as assistant response
                             var buf: [256]u8 = undefined;
                             const response = std.fmt.bufPrint(&buf, "You said: {s}", .{input}) catch "Response";
-                            ui.addLine(response, .assistant) catch {};
-                            ui.addLine("", .normal) catch {};
+                            ui.addLine(response, .assistant) catch |err| {
+                                logging.debugLog("Failed to add assistant line: {any}", .{err});
+                            };
+                            ui.addLine("", .normal) catch |err| {
+                                logging.debugLog("Failed to add blank line: {any}", .{err});
+                            };
                         }
                     }
                     try ui.render();
@@ -105,7 +113,9 @@ pub fn main() !void {
                     // Regular character
                     const char: u8 = @truncate(event.ch);
                     if (char >= 32 and char < 127) {
-                        ui.addInputChar(char) catch {};
+                        ui.addInputChar(char) catch |err| {
+                            logging.debugLog("Failed to add input char: {any}", .{err});
+                        };
                         try ui.render();
                     }
                 }
