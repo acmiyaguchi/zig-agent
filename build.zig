@@ -10,6 +10,7 @@
 //! - termbox2: Terminal UI library (C dependency).
 
 const std = @import("std");
+const zlinter = @import("zlinter");
 
 const CoreDeps = struct {
     target: std.Build.ResolvedTarget,
@@ -110,6 +111,7 @@ pub fn build(b: *std.Build) void {
     addApp(b, deps);
     addUnitTests(b, deps);
     addHarness(b, deps);
+    addLint(b);
 }
 
 fn addApp(b: *std.Build, deps: CoreDeps) void {
@@ -209,4 +211,37 @@ fn addHarness(b: *std.Build, deps: CoreDeps) void {
         );
         run_step.dependOn(&run_cmd.step);
     }
+}
+
+fn addLint(b: *std.Build) void {
+    const lint_step = b.step("lint", "Run the linter on source code");
+    lint_step.dependOn(step: {
+        var builder = zlinter.builder(b, .{});
+
+        // Configure paths - exclude vendor/
+        builder.addPaths(.{
+            .include = &.{b.path("src/")},
+            .exclude = &.{},
+        });
+
+        // Naming conventions
+        builder.addRule(.{ .builtin = .declaration_naming }, .{});
+        builder.addRule(.{ .builtin = .field_naming }, .{});
+        builder.addRule(.{ .builtin = .function_naming }, .{});
+        builder.addRule(.{ .builtin = .file_naming }, .{});
+
+        // Code quality
+        builder.addRule(.{ .builtin = .no_unused }, .{});
+        builder.addRule(.{ .builtin = .no_deprecated }, .{});
+        builder.addRule(.{ .builtin = .no_orelse_unreachable }, .{});
+        builder.addRule(.{ .builtin = .no_swallow_error }, .{});
+        builder.addRule(.{ .builtin = .no_empty_block }, .{});
+        builder.addRule(.{ .builtin = .switch_case_ordering }, .{});
+
+        // Strict: memory and error handling
+        builder.addRule(.{ .builtin = .no_hidden_allocations }, .{});
+        builder.addRule(.{ .builtin = .no_panic }, .{});
+
+        break :step builder.build();
+    });
 }
