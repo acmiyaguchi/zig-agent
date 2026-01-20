@@ -7,14 +7,12 @@ pub fn debugLog(comptime fmt: []const u8, args: anytype) void {
     defer file.close();
     file.seekFromEnd(0) catch return;
 
-    // zlinter-disable no_deprecated - File I/O deprecations are transitional in 0.15.x
-    var buf: [4096]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    const writer = fbs.writer();
+    // Build message in memory first using bufPrint
+    var msg_buf: [4096]u8 = undefined;
+    const timestamp_str = std.fmt.bufPrint(&msg_buf, "[{d}] " ++ fmt ++ "\n", .{std.time.milliTimestamp()} ++ args) catch return;
 
-    writer.print("[{d}] ", .{std.time.milliTimestamp()}) catch return;
-    writer.print(fmt ++ "\n", args) catch return;
-
-    file.writeAll(fbs.getWritten()) catch return;
-    // zlinter-enable no_deprecated
+    // Write to file using buffered writer interface
+    var write_buf: [4096]u8 = undefined;
+    var writer = file.writer(&write_buf).interface;
+    writer.writeAll(timestamp_str) catch return;
 }

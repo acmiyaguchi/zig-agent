@@ -8,6 +8,8 @@ const agent_lib = agent_module.agent;
 const xev = @import("xev");
 const terminal = @import("ui/terminal.zig");
 const TerminalUI = terminal.TerminalUI;
+const utils = @import("utils");
+const logging = utils.logging;
 
 /// InteractiveMode encapsulates the libxev event loop and termbox input handling
 const InteractiveMode = struct {
@@ -73,7 +75,10 @@ const InteractiveMode = struct {
 
         // zlinter-disable no_swallow_error - UI rendering errors shouldn't stop event loop
         // Process any available terminal events
-        while (self.terminal_ui.pollEvent() catch null) |event| {
+        while (self.terminal_ui.pollEvent() catch |err| blk: {
+            logging.debugLog("pollEvent error: {any}", .{err});
+            break :blk null;
+        }) |event| {
             if (event.type == .key) {
                 self.handleKeyEvent(event);
             } else if (event.type == .resize) {
@@ -86,7 +91,9 @@ const InteractiveMode = struct {
         }
 
         // Re-render after processing events
-        self.terminal_ui.render() catch {};
+        self.terminal_ui.render() catch |err| {
+            logging.debugLog("render error in onTtyReady: {any}", .{err});
+        };
 
         return if (self.should_quit) .disarm else .rearm;
         // zlinter-enable no_swallow_error
@@ -128,7 +135,10 @@ const InteractiveMode = struct {
         if (event.key == terminal.key.ENTER) {
 
             // Get input and process it
-            const input = self.terminal_ui.getAndClearInput() catch return;
+            const input = self.terminal_ui.getAndClearInput() catch |err| {
+                logging.debugLog("getAndClearInput error: {any}", .{err});
+                return;
+            };
             if (input.len == 0) {
                 self.allocator.free(input);
                 return;
@@ -143,15 +153,23 @@ const InteractiveMode = struct {
 
             // Check if agent is already running
             if (self.agent_running.load(.acquire)) {
-                self.terminal_ui.addLine("Agent is already running...", .warning) catch {};
-                self.terminal_ui.render() catch {};
+                self.terminal_ui.addLine("Agent is already running...", .warning) catch |err| {
+                    logging.debugLog("addLine error: {any}", .{err});
+                };
+                self.terminal_ui.render() catch |err| {
+                    logging.debugLog("render error: {any}", .{err});
+                };
                 self.allocator.free(input);
                 return;
             }
 
             // Add user input to display
-            self.terminal_ui.addUserInput(input) catch {};
-            self.terminal_ui.render() catch {};
+            self.terminal_ui.addUserInput(input) catch |err| {
+                logging.debugLog("addUserInput error: {any}", .{err});
+            };
+            self.terminal_ui.render() catch |err| {
+                logging.debugLog("render error: {any}", .{err});
+            };
 
             // Join previous thread if it exists
             if (self.agent_thread) |thread| {
@@ -167,9 +185,12 @@ const InteractiveMode = struct {
             // The thread is responsible for freeing it.
             self.agent_thread = std.Thread.spawn(.{}, agentThreadWrapper, .{ self, input }) catch |err| {
                 self.agent_running.store(false, .release);
+                logging.debugLog("thread spawn error: {any}", .{err});
                 var buf: [256]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, "Error spawning thread: {any}", .{err}) catch "Error spawning thread";
-                self.terminal_ui.addLine(msg, .error_msg) catch {};
+                self.terminal_ui.addLine(msg, .error_msg) catch |add_err| {
+                    logging.debugLog("addLine error: {any}", .{add_err});
+                };
                 self.allocator.free(input);
                 return;
             };
@@ -194,7 +215,9 @@ const InteractiveMode = struct {
 
         // Regular character input
         if (event.ch != 0 and event.ch < 128) {
-            self.terminal_ui.addInputChar(@intCast(event.ch)) catch {};
+            self.terminal_ui.addInputChar(@intCast(event.ch)) catch |err| {
+                logging.debugLog("addInputChar error: {any}", .{err});
+            };
         }
         // zlinter-enable no_swallow_error
     }
@@ -205,10 +228,15 @@ const InteractiveMode = struct {
         defer self.agent_running.store(false, .release);
 
         self.agent.executeTurn(input) catch |err| {
+            logging.debugLog("agent executeTurn error: {any}", .{err});
             var buf: [256]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, "Error: {any}", .{err}) catch "Error";
-            self.terminal_ui.addLine(msg, .error_msg) catch {};
-            self.terminal_ui.render() catch {};
+            self.terminal_ui.addLine(msg, .error_msg) catch |add_err| {
+                logging.debugLog("addLine error: {any}", .{add_err});
+            };
+            self.terminal_ui.render() catch |render_err| {
+                logging.debugLog("render error: {any}", .{render_err});
+            };
         };
         // zlinter-enable no_swallow_error
     }

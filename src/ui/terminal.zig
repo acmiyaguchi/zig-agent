@@ -2,6 +2,8 @@
 const std = @import("std");
 const tb = @import("termbox");
 const agent_types = @import("agent").types;
+const utils = @import("utils");
+const logging = utils.logging;
 
 pub const key = struct {
     // zlinter-disable declaration_naming - C FFI constants use SCREAMING_SNAKE_CASE
@@ -284,9 +286,6 @@ pub const TerminalUI = struct {
     /// Split text into segments by newlines and width wrapping
     /// Caller must deinit the returned ArrayList
     fn splitTextIntoSegments(self: *TerminalUI, text: []const u8) std.ArrayList(TextSegment) {
-        const utils = @import("utils");
-        const logging = utils.logging;
-
         var segments = std.ArrayList(TextSegment){};
         const width = if (self.width > 0) self.width else 80;
 
@@ -649,17 +648,23 @@ pub const TerminalUI = struct {
 
         switch (update) {
             .thought => |t| {
-                self.addLine(t, .thinking) catch {};
+                self.addLine(t, .thinking) catch |err| {
+                    logging.debugLog("addLine thought error: {any}", .{err});
+                };
             },
             .message_chunk => |chunk| {
                 // For streaming, append to last assistant line
                 // We need to peek at last line, so we need a lock-safe way to do this logic
-                self.appendStreamingChunk(chunk) catch {};
+                self.appendStreamingChunk(chunk) catch |err| {
+                    logging.debugLog("appendStreamingChunk error: {any}", .{err});
+                };
             },
             .tool_call => |tc| {
                 var buf: [512]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, "[Tool: {s}]", .{tc.name}) catch "[Tool call]";
-                self.addLine(msg, .tool_call) catch {};
+                self.addLine(msg, .tool_call) catch |err| {
+                    logging.debugLog("addLine tool_call error: {any}", .{err});
+                };
             },
             .tool_result => |tr| {
                 const line_type: LineType = if (tr.success) .tool_result else .tool_error;
@@ -668,26 +673,36 @@ pub const TerminalUI = struct {
                 if (tr.output.len > max_len) {
                     var buf: [256]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, "[Result: {s}...]", .{tr.output[0..max_len]}) catch "[Result]";
-                    self.addLine(msg, line_type) catch {};
+                    self.addLine(msg, line_type) catch |err| {
+                        logging.debugLog("addLine tool_result error: {any}", .{err});
+                    };
                 } else {
                     var buf: [512]u8 = undefined;
                     const msg = std.fmt.bufPrint(&buf, "[Result: {s}]", .{tr.output}) catch "[Result]";
-                    self.addLine(msg, line_type) catch {};
+                    self.addLine(msg, line_type) catch |err| {
+                        logging.debugLog("addLine tool_result error: {any}", .{err});
+                    };
                 }
             },
             .completion => {
                 // Add blank line after completion for readability
-                self.addLine("", .normal) catch {};
+                self.addLine("", .normal) catch |err| {
+                    logging.debugLog("addLine completion error: {any}", .{err});
+                };
             },
             .@"error" => |e| {
                 var buf: [512]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, "Error: {s}", .{e}) catch "Error occurred";
-                self.addLine(msg, .error_msg) catch {};
+                self.addLine(msg, .error_msg) catch |err| {
+                    logging.debugLog("addLine error_msg error: {any}", .{err});
+                };
             },
             .memory_warning => |mw| {
                 var buf: [128]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, "Warning: Memory usage {d}KB (threshold: {d}KB)", .{ mw.rss_kb, mw.threshold_kb }) catch "Memory warning";
-                self.addLine(msg, .warning) catch {};
+                self.addLine(msg, .warning) catch |err| {
+                    logging.debugLog("addLine memory_warning error: {any}", .{err});
+                };
             },
             .usage_update => |usage| {
                 self.mutex.lock();
@@ -698,7 +713,9 @@ pub const TerminalUI = struct {
         }
 
         // Re-render after update
-        self.render() catch {};
+        self.render() catch |err| {
+            logging.debugLog("render error in handleAgentUpdate: {any}", .{err});
+        };
         // zlinter-enable no_swallow_error
     }
 
@@ -739,8 +756,12 @@ pub const TerminalUI = struct {
         }) catch "Execute tool? [Y/n] ";
 
         // Add the confirmation line
-        self.addLine(msg, .warning) catch {};
-        self.render() catch {};
+        self.addLine(msg, .warning) catch |err| {
+            logging.debugLog("addLine confirmation error: {any}", .{err});
+        };
+        self.render() catch |err| {
+            logging.debugLog("render confirmation error: {any}", .{err});
+        };
 
         // Signal main thread we are waiting
         self.confirmation_done.store(false, .release);
@@ -754,11 +775,17 @@ pub const TerminalUI = struct {
         const confirmed = self.confirmation_result.load(.acquire);
 
         if (confirmed) {
-            self.addLine("[Confirmed]", .system) catch {};
+            self.addLine("[Confirmed]", .system) catch |err| {
+                logging.debugLog("addLine confirmed error: {any}", .{err});
+            };
         } else {
-            self.addLine("[Cancelled]", .warning) catch {};
+            self.addLine("[Cancelled]", .warning) catch |err| {
+                logging.debugLog("addLine cancelled error: {any}", .{err});
+            };
         }
-        self.render() catch {};
+        self.render() catch |err| {
+            logging.debugLog("render confirmation result error: {any}", .{err});
+        };
 
         return confirmed;
         // zlinter-enable no_swallow_error
