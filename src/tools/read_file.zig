@@ -71,9 +71,17 @@ pub fn executeReadFile(allocator: std.mem.Allocator, arguments_json: []const u8)
         };
     }
 
-    var buf: [4096]u8 = undefined;
-    var reader = file.reader(&buf).interface;
-    const content = try reader.allocRemaining(allocator, .limited(1024 * 1024));
+    const content = try allocator.alloc(u8, file_size);
+    errdefer allocator.free(content);
+
+    const bytes_read = try file.readAll(content);
+    if (bytes_read != file_size) {
+        allocator.free(content);
+        return registry.ToolResult{
+            .success = false,
+            .output = try allocator.dupe(u8, "Error: Could not read entire file."),
+        };
+    }
 
     return registry.ToolResult{
         .success = true,
@@ -96,8 +104,10 @@ test "read_file tool - success" {
 
     const tmp_path = "/tmp/zig_agent_test.txt";
     const content = "Hello, Zig Agent!";
-    try std.fs.cwd().writeFile(.{ .sub_path = tmp_path, .data = content });
-    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+    const file = try std.fs.createFileAbsolute(tmp_path, .{});
+    try file.writeAll(content);
+    file.close();
+    defer std.fs.deleteFileAbsolute(tmp_path) catch {};
 
     const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\"}}", .{tmp_path});
     defer allocator.free(args);

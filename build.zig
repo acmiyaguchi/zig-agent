@@ -150,28 +150,47 @@ fn addApp(b: *std.Build, deps: CoreDeps) void {
 }
 
 fn addUnitTests(b: *std.Build, deps: CoreDeps) void {
-    const test_module = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = deps.target,
-        .optimize = deps.optimize,
-    });
-    const exe_unit_tests = b.addTest(.{
-        .name = "zag-tests",
-        .root_module = test_module,
-    });
-
-    exe_unit_tests.root_module.addImport("xev", deps.libxev_mod);
-    exe_unit_tests.root_module.addImport("termbox", deps.termbox_mod);
-    exe_unit_tests.root_module.addImport("api", deps.api_mod);
-    exe_unit_tests.root_module.addImport("tools", deps.tools_mod);
-    exe_unit_tests.root_module.addImport("agent", deps.agent_mod);
-    exe_unit_tests.root_module.addImport("utils", deps.utils_mod);
-    exe_unit_tests.linkLibC();
-
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
-
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_exe_unit_tests.step);
+
+    const Import = enum { xev, termbox, api, tools, agent, utils };
+
+    const module_tests = [_]struct {
+        name: []const u8,
+        path: []const u8,
+        imports: []const Import,
+        link_libc: bool,
+    }{
+        .{ .name = "zag-tests", .path = "src/main.zig", .imports = &.{ .xev, .termbox, .api, .tools, .agent, .utils }, .link_libc = true },
+        .{ .name = "api-tests", .path = "src/api/root.zig", .imports = &.{.utils}, .link_libc = false },
+        .{ .name = "tools-tests", .path = "src/tools/root.zig", .imports = &.{ .utils, .api }, .link_libc = false },
+    };
+
+    for (module_tests) |test_cfg| {
+        const test_module = b.createModule(.{
+            .root_source_file = b.path(test_cfg.path),
+            .target = deps.target,
+            .optimize = deps.optimize,
+        });
+        const tests = b.addTest(.{
+            .name = test_cfg.name,
+            .root_module = test_module,
+        });
+
+        for (test_cfg.imports) |import| {
+            const mod = switch (import) {
+                .xev => deps.libxev_mod,
+                .termbox => deps.termbox_mod,
+                .api => deps.api_mod,
+                .tools => deps.tools_mod,
+                .agent => deps.agent_mod,
+                .utils => deps.utils_mod,
+            };
+            tests.root_module.addImport(@tagName(import), mod);
+        }
+
+        if (test_cfg.link_libc) tests.linkLibC();
+        test_step.dependOn(&b.addRunArtifact(tests).step);
+    }
 }
 
 fn addHarness(b: *std.Build, deps: CoreDeps) void {

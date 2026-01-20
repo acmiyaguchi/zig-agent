@@ -85,16 +85,22 @@ fn executeEditFile(allocator: std.mem.Allocator, arguments_json: []const u8) any
         };
     }
 
-    var buf: [4096]u8 = undefined;
-    var reader = file.reader(&buf).interface;
-    const content = reader.allocRemaining(allocator, .limited(10 * 1024 * 1024)) catch |err| {
+    const content = allocator.alloc(u8, file_size) catch |err| {
+        file.close();
+        return registry.ToolResult{
+            .success = false,
+            .output = try std.fmt.allocPrint(allocator, "Error allocating buffer: {any}", .{err}),
+        };
+    };
+    defer allocator.free(content);
+
+    _ = file.readAll(content) catch |err| {
         file.close();
         return registry.ToolResult{
             .success = false,
             .output = try std.fmt.allocPrint(allocator, "Error reading file: {any}", .{err}),
         };
     };
-    defer allocator.free(content);
     file.close();
 
     // Count occurrences of old_text
@@ -137,9 +143,7 @@ fn executeEditFile(allocator: std.mem.Allocator, arguments_json: []const u8) any
     };
     defer out_file.close();
 
-    var out_buf: [4096]u8 = undefined;
-    var writer = out_file.writer(&out_buf).interface;
-    writer.writeAll(new_content) catch |err| {
+    out_file.writeAll(new_content) catch |err| {
         return registry.ToolResult{
             .success = false,
             .output = try std.fmt.allocPrint(allocator, "Error writing file: {any}", .{err}),
@@ -172,10 +176,7 @@ test "edit_file success" {
     {
         const file = try std.fs.createFileAbsolute(tmp_path, .{});
         defer file.close();
-
-        var buf: [4096]u8 = undefined;
-        var writer = file.writer(&buf).interface;
-        try writer.writeAll("hello world");
+        try file.writeAll("hello world");
     }
 
     const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\", \"old_text\": \"world\", \"new_text\": \"zig\"}}", .{tmp_path});
@@ -190,10 +191,10 @@ test "edit_file success" {
     const file = try std.fs.openFileAbsolute(tmp_path, .{});
     defer file.close();
 
-    var buf: [4096]u8 = undefined;
-    var reader = file.reader(&buf).interface;
-    const content = try reader.allocRemaining(allocator, .limited(1024));
+    const file_size = try file.getEndPos();
+    const content = try allocator.alloc(u8, file_size);
     defer allocator.free(content);
+    _ = try file.readAll(content);
     try std.testing.expectEqualStrings("hello zig", content);
 }
 
@@ -207,10 +208,7 @@ test "edit_file not found" {
     {
         const file = try std.fs.createFileAbsolute(tmp_path, .{});
         defer file.close();
-
-        var buf: [4096]u8 = undefined;
-        var writer = file.writer(&buf).interface;
-        try writer.writeAll("hello world");
+        try file.writeAll("hello world");
     }
 
     const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\", \"old_text\": \"foo\", \"new_text\": \"bar\"}}", .{tmp_path});

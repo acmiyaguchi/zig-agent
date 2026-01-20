@@ -64,9 +64,7 @@ fn executeWriteFile(allocator: std.mem.Allocator, arguments_json: []const u8) an
     };
     defer file.close();
 
-    var buf: [4096]u8 = undefined;
-    var writer = file.writer(&buf).interface;
-    writer.writeAll(content) catch |err| {
+    file.writeAll(content) catch |err| {
         return registry.ToolResult{
             .success = false,
             .output = try std.fmt.allocPrint(allocator, "Error writing file: {any}", .{err}),
@@ -107,9 +105,9 @@ test "write_file success" {
     const file = try std.fs.openFileAbsolute(tmp_path, .{});
     defer file.close();
 
-    var buf: [4096]u8 = undefined;
-    var reader = file.reader(&buf).interface;
-    const content = try reader.allocRemaining(allocator, .limited(1024));
+    const file_size = try file.getEndPos();
+    const content = try allocator.alloc(u8, file_size);
     defer allocator.free(content);
+    _ = try file.readAll(content);
     try std.testing.expectEqualStrings("hello world", content);
 }

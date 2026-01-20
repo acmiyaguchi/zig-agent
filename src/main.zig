@@ -309,4 +309,6 @@ test {
     std.testing.refAllDecls(api);
     std.testing.refAllDecls(agent_module);
     std.testing.refAllDecls(tools);
+    std.testing.refAllDecls(terminal);
+    std.testing.refAllDecls(utils);
 }
