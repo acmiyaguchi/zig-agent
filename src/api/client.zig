@@ -364,6 +364,28 @@ test "SSEParser ignores empty lines" {
     try std.testing.expect(no_ev == null);
 }
 
+test "SSEParser handles DONE signal" {
+    const allocator = std.testing.allocator;
+    var parser = SSEParser.init(allocator);
+    defer parser.deinit();
+
+    try parser.push("data: {\"content\":\"hello\"}\n");
+    try parser.push("data: [DONE]\n");
+
+    // First event is JSON
+    const ev1 = (try parser.next()).?;
+    try std.testing.expect(ev1 == .json);
+    try std.testing.expectEqualStrings("{\"content\":\"hello\"}", ev1.json);
+
+    // Second event is done signal
+    const ev2 = (try parser.next()).?;
+    try std.testing.expect(ev2 == .done);
+
+    // No more events
+    const ev3 = try parser.next();
+    try std.testing.expect(ev3 == null);
+}
+
 test "APIClient init with empty key returns error" {
     const allocator = std.testing.allocator;
 

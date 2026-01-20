@@ -192,10 +192,13 @@ test "subprocess execute working directory" {
 test "subprocess ExecResult deinit frees memory" {
     const allocator = std.testing.allocator;
 
-    const result = try execute(allocator, "echo test", null, null);
-    defer result.deinit(allocator);
+    // Execute command that produces both stdout and stderr
+    const result = try execute(allocator, "sh -c 'echo out && echo err >&2'", null, null);
 
-    // After deinit, the pointers should be freed
+    // Verify we got output before freeing
     try std.testing.expect(result.stdout.len > 0);
-    try std.testing.expect(result.stderr.len == 0 or result.stderr.len >= 0);
+    try std.testing.expect(result.stderr.len > 0);
+
+    // deinit frees memory - std.testing.allocator will detect leaks if not freed properly
+    result.deinit(allocator);
 }

@@ -26,18 +26,15 @@ pub fn getCurrentRSS(allocator: std.mem.Allocator) ?usize {
     return null;
 }
 
-test "getCurrentRSS returns non-null on linux" {
+test "getCurrentRSS returns valid page-aligned value on linux" {
     const allocator = std.testing.allocator;
 
     const rss = getCurrentRSS(allocator);
-    try std.testing.expect(rss != null);
-}
 
-test "getCurrentRSS returns reasonable value" {
-    const allocator = std.testing.allocator;
-
-    const rss = getCurrentRSS(allocator);
+    // Should return non-null on Linux (where /proc/self/statm exists)
     try std.testing.expect(rss != null);
-    try std.testing.expect(rss.? > 4096);
+
+    // RSS should be at least one page and page-aligned
+    try std.testing.expect(rss.? >= 4096);
     try std.testing.expectEqual(@as(usize, 0), rss.? % 4096);
 }

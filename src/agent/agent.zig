@@ -46,6 +46,20 @@ pub const ConversationState = struct {
     }
 
     pub fn clear(self: *ConversationState) void {
+        // Free all message content before clearing
+        for (self.messages.items) |msg| {
+            if (msg.content) |c| self.allocator.free(c);
+            if (msg.tool_calls) |tcs| {
+                for (tcs) |tc| {
+                    self.allocator.free(tc.id);
+                    self.allocator.free(tc.function.name);
+                    self.allocator.free(tc.function.arguments);
+                }
+                self.allocator.free(tcs);
+            }
+            if (msg.tool_call_id) |id| self.allocator.free(id);
+            if (msg.name) |n| self.allocator.free(n);
+        }
         self.messages.clearRetainingCapacity();
     }
 };
@@ -424,18 +438,35 @@ test "ConversationState addMessage adds multiple messages" {
     try std.testing.expectEqual(api_types.Role.user, state.messages.items[2].role);
 }
 
-test "ConversationState clear empties history" {
+test "ConversationState clear empties history and frees memory" {
     var state = ConversationState.init(std.testing.allocator);
     defer state.deinit();
 
-    const content = try std.testing.allocator.dupe(u8, "Test message");
+    // Add a simple message
     try state.addMessage(.{
         .role = .user,
-        .content = content,
+        .content = try std.testing.allocator.dupe(u8, "Test message"),
     });
 
-    try std.testing.expectEqual(@as(usize, 1), state.messages.items.len);
+    // Add a message with tool_calls to verify those are freed too
+    var tool_calls = try std.testing.allocator.alloc(api_types.ToolCall, 1);
+    tool_calls[0] = .{
+        .id = try std.testing.allocator.dupe(u8, "call_clear_test"),
+        .type = "function",
+        .function = .{
+            .name = try std.testing.allocator.dupe(u8, "test_func"),
+            .arguments = try std.testing.allocator.dupe(u8, "{}"),
+        },
+    };
+    try state.addMessage(.{
+        .role = .assistant,
+        .content = try std.testing.allocator.dupe(u8, "Response"),
+        .tool_calls = tool_calls,
+    });
 
+    try std.testing.expectEqual(@as(usize, 2), state.messages.items.len);
+
+    // clear() should free all message content (no memory leak)
     state.clear();
 
     try std.testing.expectEqual(@as(usize, 0), state.messages.items.len);

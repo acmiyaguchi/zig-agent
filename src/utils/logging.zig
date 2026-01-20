@@ -17,16 +17,23 @@ pub fn debugLog(comptime fmt: []const u8, args: anytype) void {
     writer.writeAll(timestamp_str) catch return;
 }
 
-test "debugLog creates log file" {
-    // First call to debugLog should create the file
-    debugLog("test message", .{});
+test "debugLog writes to log file" {
+    const log_path = "/tmp/zig-agent-debug.log";
 
-    // Check if the file exists
-    const file = std.fs.cwd().openFile("/tmp/zig-agent-debug.log", .{}) catch {
-        try std.testing.expect(false);
-        return;
-    };
+    // Delete existing log to start fresh
+    std.fs.cwd().deleteFile(log_path) catch {};
+
+    // Write a unique test message
+    debugLog("test_marker_{d}", .{12345});
+
+    // Verify file exists and contains our message
+    const file = try std.fs.cwd().openFile(log_path, .{});
     defer file.close();
 
-    try std.testing.expect(true);
+    var buf: [4096]u8 = undefined;
+    const bytes_read = try file.readAll(&buf);
+    const content = buf[0..bytes_read];
+
+    // Verify the message was written (contains our marker)
+    try std.testing.expect(std.mem.indexOf(u8, content, "test_marker_12345") != null);
 }

@@ -126,3 +126,12 @@ test "list_directory recursive" {
     // Recursive output should mention subdir
     try std.testing.expect(std.mem.indexOf(u8, result.output, "subdir") != null);
 }
+
+test "list_directory nonexistent path fails" {
+    const allocator = std.testing.allocator;
+
+    const result = try executeListDirectory(allocator, "{\"path\": \"/nonexistent_path_that_does_not_exist_12345\"}");
+    defer result.deinit(allocator);
+
+    try std.testing.expect(!result.success);
+}
