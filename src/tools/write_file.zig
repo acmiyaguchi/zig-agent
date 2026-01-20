@@ -111,3 +111,78 @@ test "write_file success" {
     _ = try file.readAll(content);
     try std.testing.expectEqualStrings("hello world", content);
 }
+
+test "write_file overwrites existing content" {
+    const allocator = std.testing.allocator;
+
+    const tmp_path = "/tmp/zig_agent_write_test_overwrite.txt";
+    defer std.fs.deleteFileAbsolute(tmp_path) catch {};
+
+    // Write long content first
+    {
+        const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\", \"content\": \"this is a long content that will be overwritten\"}}", .{tmp_path});
+        defer allocator.free(args);
+
+        const result = try executeWriteFile(allocator, args);
+        defer result.deinit(allocator);
+
+        try std.testing.expect(result.success);
+    }
+
+    // Now overwrite with short content
+    {
+        const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\", \"content\": \"short\"}}", .{tmp_path});
+        defer allocator.free(args);
+
+        const result = try executeWriteFile(allocator, args);
+        defer result.deinit(allocator);
+
+        try std.testing.expect(result.success);
+    }
+
+    // Verify only short content remains
+    const file = try std.fs.openFileAbsolute(tmp_path, .{});
+    defer file.close();
+
+    const file_size = try file.getEndPos();
+    const content = try allocator.alloc(u8, file_size);
+    defer allocator.free(content);
+    _ = try file.readAll(content);
+    try std.testing.expectEqualStrings("short", content);
+}
+
+test "write_file overwrites with empty content" {
+    const allocator = std.testing.allocator;
+
+    const tmp_path = "/tmp/zig_agent_write_test_empty.txt";
+    defer std.fs.deleteFileAbsolute(tmp_path) catch {};
+
+    // Write initial content
+    {
+        const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\", \"content\": \"initial content here\"}}", .{tmp_path});
+        defer allocator.free(args);
+
+        const result = try executeWriteFile(allocator, args);
+        defer result.deinit(allocator);
+
+        try std.testing.expect(result.success);
+    }
+
+    // Overwrite with empty content
+    {
+        const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\", \"content\": \"\"}}", .{tmp_path});
+        defer allocator.free(args);
+
+        const result = try executeWriteFile(allocator, args);
+        defer result.deinit(allocator);
+
+        try std.testing.expect(result.success);
+    }
+
+    // Verify file is now empty (0 bytes)
+    const file = try std.fs.openFileAbsolute(tmp_path, .{});
+    defer file.close();
+
+    const file_size = try file.getEndPos();
+    try std.testing.expectEqual(@as(u64, 0), file_size);
+}

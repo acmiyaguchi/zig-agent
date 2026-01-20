@@ -125,3 +125,33 @@ test "run_command working_dir must be absolute" {
     try std.testing.expect(!result.success);
     try std.testing.expectEqualStrings("Error: working_dir must be absolute.", result.output);
 }
+
+test "run_command timeout enforcement" {
+    const allocator = std.testing.allocator;
+
+    const result = try executeRunCommand(allocator, "{\"command\": \"sleep 5\", \"timeout\": 1}");
+    defer result.deinit(allocator);
+
+    try std.testing.expect(!result.success);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "timed out") != null);
+}
+
+test "run_command non-zero exit code" {
+    const allocator = std.testing.allocator;
+
+    const result = try executeRunCommand(allocator, "{\"command\": \"exit 42\"}");
+    defer result.deinit(allocator);
+
+    try std.testing.expect(!result.success);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "exit code: 42") != null);
+}
+
+test "run_command exit code 1" {
+    const allocator = std.testing.allocator;
+
+    const result = try executeRunCommand(allocator, "{\"command\": \"false\"}");
+    defer result.deinit(allocator);
+
+    try std.testing.expect(!result.success);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "exit code: 1") != null);
+}

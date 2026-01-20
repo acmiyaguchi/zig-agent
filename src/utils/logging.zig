@@ -16,3 +16,17 @@ pub fn debugLog(comptime fmt: []const u8, args: anytype) void {
     var writer = file.writer(&write_buf).interface;
     writer.writeAll(timestamp_str) catch return;
 }
+
+test "debugLog creates log file" {
+    // First call to debugLog should create the file
+    debugLog("test message", .{});
+
+    // Check if the file exists
+    const file = std.fs.cwd().openFile("/tmp/zig-agent-debug.log", .{}) catch {
+        try std.testing.expect(false);
+        return;
+    };
+    defer file.close();
+
+    try std.testing.expect(true);
+}

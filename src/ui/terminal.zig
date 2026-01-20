@@ -887,3 +887,174 @@ test "terminal ui input character limit" {
     // Should be capped at max_input_chars
     try std.testing.expectEqual(TerminalUI.max_input_chars, terminal_ui.input_buffer.items.len);
 }
+
+test "formatTokenCount below 1000 returns raw number" {
+    var buf: [32]u8 = undefined;
+
+    // Test 0
+    const result_0 = TerminalUI.formatTokenCount(0, &buf);
+    try std.testing.expectEqualStrings("0", result_0);
+
+    // Test 500
+    const result_500 = TerminalUI.formatTokenCount(500, &buf);
+    try std.testing.expectEqualStrings("500", result_500);
+
+    // Test 999
+    const result_999 = TerminalUI.formatTokenCount(999, &buf);
+    try std.testing.expectEqualStrings("999", result_999);
+}
+
+test "formatTokenCount at 1000 boundary returns K format" {
+    var buf: [32]u8 = undefined;
+
+    const result = TerminalUI.formatTokenCount(1000, &buf);
+    try std.testing.expectEqualStrings("1.0K", result);
+}
+
+test "formatTokenCount at 1000000 boundary returns M format" {
+    var buf: [32]u8 = undefined;
+
+    const result = TerminalUI.formatTokenCount(1000000, &buf);
+    try std.testing.expectEqualStrings("1.0M", result);
+}
+
+test "scrollUp from zero offset stays at zero" {
+    const allocator = std.testing.allocator;
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
+
+    terminal_ui.width = 80;
+    terminal_ui.height = 24;
+
+    try std.testing.expectEqual(@as(usize, 0), terminal_ui.scroll_offset);
+
+    // Attempt to scroll up from zero
+    terminal_ui.scrollUp();
+
+    // Should remain at zero (no underflow)
+    try std.testing.expectEqual(@as(usize, 0), terminal_ui.scroll_offset);
+}
+
+test "scrollDown with no content stays at zero" {
+    const allocator = std.testing.allocator;
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
+
+    terminal_ui.width = 80;
+    terminal_ui.height = 24;
+
+    try std.testing.expectEqual(@as(usize, 0), terminal_ui.scroll_offset);
+
+    // Scroll down with empty content
+    terminal_ui.scrollDown();
+
+    // Should remain at zero
+    try std.testing.expectEqual(@as(usize, 0), terminal_ui.scroll_offset);
+}
+
+test "scrollToBottom with empty content sets offset to zero" {
+    const allocator = std.testing.allocator;
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
+
+    terminal_ui.width = 80;
+    terminal_ui.height = 24;
+
+    // Set scroll offset to non-zero (simulating previous scroll)
+    terminal_ui.scroll_offset = 10;
+
+    // Call scrollToBottom with no content
+    terminal_ui.scrollToBottom();
+
+    // Should reset to 0
+    try std.testing.expectEqual(@as(usize, 0), terminal_ui.scroll_offset);
+}
+
+test "scrollToBottom with content less than screen sets offset to zero" {
+    const allocator = std.testing.allocator;
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
+
+    terminal_ui.width = 80;
+    terminal_ui.height = 24;
+
+    // Add a short line
+    try terminal_ui.addLine("Hello", .normal);
+
+    // Set scroll offset to non-zero
+    terminal_ui.scroll_offset = 5;
+
+    // Call scrollToBottom
+    terminal_ui.scrollToBottom();
+
+    // Should reset to 0 since content fits on screen
+    try std.testing.expectEqual(@as(usize, 0), terminal_ui.scroll_offset);
+}
+
+test "splitTextIntoSegments empty string returns single empty segment" {
+    const allocator = std.testing.allocator;
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
+
+    terminal_ui.width = 80;
+
+    var segments = terminal_ui.splitTextIntoSegments("");
+    defer segments.deinit(allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), segments.items.len);
+    try std.testing.expectEqualStrings("", segments.items[0].text);
+    try std.testing.expectEqual(false, segments.items[0].is_continuation);
+}
+
+test "splitTextIntoSegments text exactly at width boundary" {
+    const allocator = std.testing.allocator;
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
+
+    terminal_ui.width = 10;
+
+    // Create text exactly 10 characters (at width boundary)
+    var segments = terminal_ui.splitTextIntoSegments("0123456789");
+    defer segments.deinit(allocator);
+
+    // Should have 1 segment with no wrapping
+    try std.testing.expectEqual(@as(usize, 1), segments.items.len);
+    try std.testing.expectEqualStrings("0123456789", segments.items[0].text);
+    try std.testing.expectEqual(false, segments.items[0].is_continuation);
+}
+
+test "splitTextIntoSegments text one over width boundary" {
+    const allocator = std.testing.allocator;
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
+
+    terminal_ui.width = 10;
+
+    // Create text 11 characters (one over width)
+    var segments = terminal_ui.splitTextIntoSegments("01234567890");
+    defer segments.deinit(allocator);
+
+    // Should have 2 segments due to wrapping
+    try std.testing.expectEqual(@as(usize, 2), segments.items.len);
+    try std.testing.expectEqualStrings("0123456789", segments.items[0].text);
+    try std.testing.expectEqual(false, segments.items[0].is_continuation);
+    try std.testing.expectEqualStrings("0", segments.items[1].text);
+    try std.testing.expectEqual(true, segments.items[1].is_continuation);
+}
+
+test "countLineWraps with newlines at various positions" {
+    const allocator = std.testing.allocator;
+    var terminal_ui = TerminalUI.init(allocator);
+    defer terminal_ui.deinit();
+
+    terminal_ui.width = 10;
+
+    // Newline at start
+    try std.testing.expectEqual(@as(usize, 2), terminal_ui.countLineWraps("\nhello"));
+
+    // Newline in middle
+    try std.testing.expectEqual(@as(usize, 2), terminal_ui.countLineWraps("hello\nworld"));
+
+    // Newline at end
+    try std.testing.expectEqual(@as(usize, 2), terminal_ui.countLineWraps("hello\n"));
+}

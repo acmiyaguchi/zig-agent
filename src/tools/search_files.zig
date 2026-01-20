@@ -168,3 +168,54 @@ test "search_files no match" {
     // grep returns exit code 1 when no matches found
     try std.testing.expect(!result.success);
 }
+
+test "search_files pattern with single quote" {
+    const allocator = std.testing.allocator;
+
+    // Create a temp file with content containing single quote
+    const tmp_dir = "/tmp/zig_agent_search_test3";
+    const tmp_file = "/tmp/zig_agent_search_test3/test.txt";
+    std.fs.makeDirAbsolute(tmp_dir) catch {};
+    defer std.fs.deleteTreeAbsolute(tmp_dir) catch {};
+
+    {
+        const file = try std.fs.createFileAbsolute(tmp_file, .{});
+        defer file.close();
+        try file.writeAll("it's a test\nthis is another line\n");
+    }
+
+    const args = try std.fmt.allocPrint(allocator, "{{\"pattern\": \"it's\", \"path\": \"{s}\"}}", .{tmp_dir});
+    defer allocator.free(args);
+
+    const result = try executeSearchFiles(allocator, args);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.success);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "it's") != null);
+}
+
+test "search_files pattern with regex special chars" {
+    const allocator = std.testing.allocator;
+
+    // Create a temp file with content matching regex pattern
+    const tmp_dir = "/tmp/zig_agent_search_test4";
+    const tmp_file = "/tmp/zig_agent_search_test4/test.txt";
+    std.fs.makeDirAbsolute(tmp_dir) catch {};
+    defer std.fs.deleteTreeAbsolute(tmp_dir) catch {};
+
+    {
+        const file = try std.fs.createFileAbsolute(tmp_file, .{});
+        defer file.close();
+        try file.writeAll("foo123bar\nfoo456bar\nbaz789qux\n");
+    }
+
+    // Use a basic character class pattern with grep
+    const args = try std.fmt.allocPrint(allocator, "{{\"pattern\": \"foo[0-9].*bar\", \"path\": \"{s}\"}}", .{tmp_dir});
+    defer allocator.free(args);
+
+    const result = try executeSearchFiles(allocator, args);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.success);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "foo") != null);
+}

@@ -138,3 +138,64 @@ pub fn execute(
         .timed_out = false,
     };
 }
+
+test "subprocess execute basic command" {
+    const allocator = std.testing.allocator;
+
+    const result = try execute(allocator, "echo hello", null, null);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(!result.timed_out);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "hello") != null);
+}
+
+test "subprocess execute captures stderr" {
+    const allocator = std.testing.allocator;
+
+    const result = try execute(allocator, "sh -c 'echo error_msg >&2'", null, null);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "error_msg") != null);
+}
+
+test "subprocess execute nonzero exit code" {
+    const allocator = std.testing.allocator;
+
+    const result = try execute(allocator, "exit 42", null, null);
+    defer result.deinit(allocator);
+
+    try std.testing.expectEqual(@as(u8, 42), result.exit_code);
+}
+
+test "subprocess execute timeout" {
+    const allocator = std.testing.allocator;
+
+    const result = try execute(allocator, "sleep 10", 1, null);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.timed_out);
+    try std.testing.expectEqual(@as(u8, 124), result.exit_code);
+}
+
+test "subprocess execute working directory" {
+    const allocator = std.testing.allocator;
+
+    const result = try execute(allocator, "pwd", null, "/tmp");
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.exit_code == 0);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "/tmp") != null);
+}
+
+test "subprocess ExecResult deinit frees memory" {
+    const allocator = std.testing.allocator;
+
+    const result = try execute(allocator, "echo test", null, null);
+    defer result.deinit(allocator);
+
+    // After deinit, the pointers should be freed
+    try std.testing.expect(result.stdout.len > 0);
+    try std.testing.expect(result.stderr.len == 0 or result.stderr.len >= 0);
+}

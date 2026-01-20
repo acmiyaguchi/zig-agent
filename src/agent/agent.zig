@@ -373,3 +373,172 @@ pub const Agent = struct {
         self.eventHandler(update, self.context);
     }
 };
+
+test "ConversationState init creates empty state" {
+    var state = ConversationState.init(std.testing.allocator);
+    defer state.deinit();
+
+    try std.testing.expectEqual(@as(usize, 0), state.messages.items.len);
+}
+
+test "ConversationState addMessage adds single message" {
+    var state = ConversationState.init(std.testing.allocator);
+    defer state.deinit();
+
+    const content = try std.testing.allocator.dupe(u8, "Hello, world!");
+    try state.addMessage(.{
+        .role = .user,
+        .content = content,
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), state.messages.items.len);
+    try std.testing.expectEqual(api_types.Role.user, state.messages.items[0].role);
+    try std.testing.expectEqualStrings("Hello, world!", state.messages.items[0].content.?);
+}
+
+test "ConversationState addMessage adds multiple messages" {
+    var state = ConversationState.init(std.testing.allocator);
+    defer state.deinit();
+
+    const content1 = try std.testing.allocator.dupe(u8, "First message");
+    try state.addMessage(.{
+        .role = .user,
+        .content = content1,
+    });
+
+    const content2 = try std.testing.allocator.dupe(u8, "Second message");
+    try state.addMessage(.{
+        .role = .assistant,
+        .content = content2,
+    });
+
+    const content3 = try std.testing.allocator.dupe(u8, "Third message");
+    try state.addMessage(.{
+        .role = .user,
+        .content = content3,
+    });
+
+    try std.testing.expectEqual(@as(usize, 3), state.messages.items.len);
+    try std.testing.expectEqual(api_types.Role.user, state.messages.items[0].role);
+    try std.testing.expectEqual(api_types.Role.assistant, state.messages.items[1].role);
+    try std.testing.expectEqual(api_types.Role.user, state.messages.items[2].role);
+}
+
+test "ConversationState clear empties history" {
+    var state = ConversationState.init(std.testing.allocator);
+    defer state.deinit();
+
+    const content = try std.testing.allocator.dupe(u8, "Test message");
+    try state.addMessage(.{
+        .role = .user,
+        .content = content,
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), state.messages.items.len);
+
+    state.clear();
+
+    try std.testing.expectEqual(@as(usize, 0), state.messages.items.len);
+}
+
+test "ConversationState getHistory returns empty slice when no messages" {
+    var state = ConversationState.init(std.testing.allocator);
+    defer state.deinit();
+
+    const history = state.getHistory();
+    try std.testing.expectEqual(@as(usize, 0), history.len);
+}
+
+test "ConversationState deinit frees message content" {
+    var state = ConversationState.init(std.testing.allocator);
+
+    const content = try std.testing.allocator.dupe(u8, "Test content");
+    try state.addMessage(.{
+        .role = .user,
+        .content = content,
+    });
+
+    // This should not leak - deinit frees the content
+    state.deinit();
+}
+
+test "ConversationState deinit frees tool_calls" {
+    var state = ConversationState.init(std.testing.allocator);
+
+    var tool_calls = try std.testing.allocator.alloc(api_types.ToolCall, 1);
+    tool_calls[0] = .{
+        .id = try std.testing.allocator.dupe(u8, "call_123"),
+        .type = "function",
+        .function = .{
+            .name = try std.testing.allocator.dupe(u8, "test_func"),
+            .arguments = try std.testing.allocator.dupe(u8, "{}"),
+        },
+    };
+
+    try state.addMessage(.{
+        .role = .assistant,
+        .content = try std.testing.allocator.dupe(u8, "Response"),
+        .tool_calls = tool_calls,
+    });
+
+    // This should not leak - deinit frees tool_calls and their fields
+    state.deinit();
+}
+
+test "ConversationState deinit frees tool_call_id and name" {
+    var state = ConversationState.init(std.testing.allocator);
+
+    try state.addMessage(.{
+        .role = .tool,
+        .content = try std.testing.allocator.dupe(u8, "Tool result"),
+        .tool_call_id = try std.testing.allocator.dupe(u8, "call_123"),
+        .name = try std.testing.allocator.dupe(u8, "my_tool"),
+    });
+
+    // This should not leak - deinit frees tool_call_id and name
+    state.deinit();
+}
+
+test "ConversationState handles message with null content" {
+    var state = ConversationState.init(std.testing.allocator);
+    defer state.deinit();
+
+    try state.addMessage(.{
+        .role = .assistant,
+        .content = null,
+    });
+
+    try std.testing.expectEqual(@as(usize, 1), state.messages.items.len);
+    try std.testing.expect(state.messages.items[0].content == null);
+}
+
+test "ConversationState handles all message roles" {
+    var state = ConversationState.init(std.testing.allocator);
+    defer state.deinit();
+
+    try state.addMessage(.{
+        .role = .system,
+        .content = try std.testing.allocator.dupe(u8, "System message"),
+    });
+
+    try state.addMessage(.{
+        .role = .user,
+        .content = try std.testing.allocator.dupe(u8, "User message"),
+    });
+
+    try state.addMessage(.{
+        .role = .assistant,
+        .content = try std.testing.allocator.dupe(u8, "Assistant message"),
+    });
+
+    try state.addMessage(.{
+        .role = .tool,
+        .content = try std.testing.allocator.dupe(u8, "Tool message"),
+    });
+
+    try std.testing.expectEqual(@as(usize, 4), state.messages.items.len);
+    try std.testing.expectEqual(api_types.Role.system, state.messages.items[0].role);
+    try std.testing.expectEqual(api_types.Role.user, state.messages.items[1].role);
+    try std.testing.expectEqual(api_types.Role.assistant, state.messages.items[2].role);
+    try std.testing.expectEqual(api_types.Role.tool, state.messages.items[3].role);
+}

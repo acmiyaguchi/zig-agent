@@ -118,3 +118,59 @@ test "read_file tool - success" {
     try std.testing.expect(result.success);
     try std.testing.expectEqualStrings(content, result.output);
 }
+
+test "read_file exactly at 1MB limit succeeds" {
+    const allocator = std.testing.allocator;
+
+    const tmp_path = "/tmp/zig_agent_test_1mb.txt";
+    defer std.fs.deleteFileAbsolute(tmp_path) catch {};
+
+    // Create exactly 1MB file (1024 * 1024 bytes)
+    const one_mb: usize = 1024 * 1024;
+    const content = try allocator.alloc(u8, one_mb);
+    defer allocator.free(content);
+    @memset(content, 'a');
+
+    {
+        const file = try std.fs.createFileAbsolute(tmp_path, .{});
+        defer file.close();
+        try file.writeAll(content);
+    }
+
+    const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\"}}", .{tmp_path});
+    defer allocator.free(args);
+
+    const result = try executeReadFile(allocator, args);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.success);
+    try std.testing.expectEqual(one_mb, result.output.len);
+}
+
+test "read_file one byte over 1MB limit fails" {
+    const allocator = std.testing.allocator;
+
+    const tmp_path = "/tmp/zig_agent_test_over_1mb.txt";
+    defer std.fs.deleteFileAbsolute(tmp_path) catch {};
+
+    // Create 1MB + 1 byte file
+    const one_mb_plus_one: usize = (1024 * 1024) + 1;
+    const content = try allocator.alloc(u8, one_mb_plus_one);
+    defer allocator.free(content);
+    @memset(content, 'b');
+
+    {
+        const file = try std.fs.createFileAbsolute(tmp_path, .{});
+        defer file.close();
+        try file.writeAll(content);
+    }
+
+    const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\"}}", .{tmp_path});
+    defer allocator.free(args);
+
+    const result = try executeReadFile(allocator, args);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(!result.success);
+    try std.testing.expectEqualStrings("Error: File too large (max 1MB).", result.output);
+}

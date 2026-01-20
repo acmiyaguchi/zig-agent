@@ -310,3 +310,63 @@ test "build request" {
 
     try std.testing.expect(std.mem.indexOf(u8, req_json, "anthropic/claude-haiku-4.5") != null);
 }
+
+test "SSEParser handles CRLF line endings" {
+    const allocator = std.testing.allocator;
+    var parser = SSEParser.init(allocator);
+    defer parser.deinit();
+
+    try parser.push("data: {\"test\":\"data\"}\r\n");
+
+    const ev = (try parser.next()).?;
+    try std.testing.expectEqualStrings("{\"test\":\"data\"}", ev.json);
+}
+
+test "SSEParser handles partial chunks" {
+    const allocator = std.testing.allocator;
+    var parser = SSEParser.init(allocator);
+    defer parser.deinit();
+
+    try parser.push("data: {\"foo\":");
+    try parser.push("\"bar\"}\n");
+
+    const ev = (try parser.next()).?;
+    try std.testing.expectEqualStrings("{\"foo\":\"bar\"}", ev.json);
+}
+
+test "SSEParser handles multiple events in single push" {
+    const allocator = std.testing.allocator;
+    var parser = SSEParser.init(allocator);
+    defer parser.deinit();
+
+    try parser.push("data: event1\ndata: event2\n");
+
+    const ev1 = (try parser.next()).?;
+    try std.testing.expectEqualStrings("event1", ev1.json);
+
+    const ev2 = (try parser.next()).?;
+    try std.testing.expectEqualStrings("event2", ev2.json);
+}
+
+test "SSEParser ignores empty lines" {
+    const allocator = std.testing.allocator;
+    var parser = SSEParser.init(allocator);
+    defer parser.deinit();
+
+    try parser.push("\n");
+    try parser.push("data: valid\n");
+    try parser.push("\n");
+
+    const ev = (try parser.next()).?;
+    try std.testing.expectEqualStrings("valid", ev.json);
+
+    const no_ev = try parser.next();
+    try std.testing.expect(no_ev == null);
+}
+
+test "APIClient init with empty key returns error" {
+    const allocator = std.testing.allocator;
+
+    const result = APIClient.init(allocator, "", null);
+    try std.testing.expectError(error.MissingAPIKey, result);
+}

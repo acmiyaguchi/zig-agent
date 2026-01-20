@@ -220,3 +220,50 @@ test "edit_file not found" {
     try std.testing.expect(!result.success);
     try std.testing.expectEqualStrings("Error: old_text not found in file.", result.output);
 }
+
+test "edit_file duplicate text found twice" {
+    const allocator = std.testing.allocator;
+
+    const tmp_path = "/tmp/zig_agent_edit_test3.txt";
+    defer std.fs.deleteFileAbsolute(tmp_path) catch {};
+
+    // Create file with duplicate text
+    {
+        const file = try std.fs.createFileAbsolute(tmp_path, .{});
+        defer file.close();
+        try file.writeAll("hello hello world");
+    }
+
+    const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\", \"old_text\": \"hello\", \"new_text\": \"goodbye\"}}", .{tmp_path});
+    defer allocator.free(args);
+
+    const result = try executeEditFile(allocator, args);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(!result.success);
+    try std.testing.expectEqualStrings("Error: old_text found 2 times. Must be unique.", result.output);
+}
+
+test "edit_file duplicate text on separate lines" {
+    const allocator = std.testing.allocator;
+
+    const tmp_path = "/tmp/zig_agent_edit_test4.txt";
+    defer std.fs.deleteFileAbsolute(tmp_path) catch {};
+
+    // Create file with same text on different lines
+    {
+        const file = try std.fs.createFileAbsolute(tmp_path, .{});
+        defer file.close();
+        try file.writeAll("function test() {}\nfunction test() {\n  return 42;\n}\n");
+    }
+
+    const args = try std.fmt.allocPrint(allocator, "{{\"path\": \"{s}\", \"old_text\": \"function test()\", \"new_text\": \"fn test\"}}", .{tmp_path});
+    defer allocator.free(args);
+
+    const result = try executeEditFile(allocator, args);
+    defer result.deinit(allocator);
+
+    try std.testing.expect(!result.success);
+    // Should find it twice
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "found 2 times") != null);
+}
