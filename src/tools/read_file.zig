@@ -71,8 +71,9 @@ pub fn executeReadFile(allocator: std.mem.Allocator, arguments_json: []const u8)
         };
     }
 
-    // zlinter-disable-next-line no_deprecated - File.readToEndAlloc is valid in Zig 0.15.x
-    const content = try file.readToEndAlloc(allocator, 1024 * 1024);
+    var buf: [4096]u8 = undefined;
+    var reader = file.reader(&buf).interface;
+    const content = try reader.allocRemaining(allocator, .limited(1024 * 1024));
 
     return registry.ToolResult{
         .success = true,

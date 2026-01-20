@@ -5,14 +5,13 @@
 
 const std = @import("std");
 const app = @import("app");
-const terminal = app.ui.terminal;
-const tb = app.ui.termbox;
+const terminal = app.terminal_ui.terminal;
+const tb = app.terminal_ui.termbox;
 const utils = @import("utils");
 const logging = utils.logging;
 
 pub fn main() !void {
-    // zlinter-disable-next-line no_deprecated - GPA syntax is fine in 0.15.x
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

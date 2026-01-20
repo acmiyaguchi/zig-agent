@@ -26,8 +26,7 @@ fn eventHandler(update: agent_types.AgentUpdate, context: *anyopaque) void {
 }
 
 pub fn main() !void {
-    // zlinter-disable-next-line no_deprecated - GPA syntax is fine in 0.15.x
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -57,8 +56,10 @@ pub fn main() !void {
     {
         const file = try std.fs.cwd().createFile(test_file, .{});
         defer file.close();
-        // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
-        try file.writeAll("Hello from test file!");
+
+        var buf: [4096]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try writer.writeAll("Hello from test file!");
     }
 
     const prompt = try std.fmt.allocPrint(allocator, "Read {s} and tell me what it says.", .{test_file});

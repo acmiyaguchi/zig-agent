@@ -12,8 +12,8 @@ const TerminalUI = terminal.TerminalUI;
 /// InteractiveMode encapsulates the libxev event loop and termbox input handling
 const InteractiveMode = struct {
     allocator: std.mem.Allocator,
-    // zlinter-disable-next-line field_naming - clear abbreviation for terminal_ui
-    ui: *TerminalUI,
+
+    terminal_ui: *TerminalUI,
     agent: *agent_lib.Agent,
     loop: xev.Loop,
     should_quit: bool,
@@ -28,7 +28,7 @@ const InteractiveMode = struct {
     pub fn init(allocator: std.mem.Allocator, ui: *TerminalUI, agent: *agent_lib.Agent) !InteractiveMode {
         return InteractiveMode{
             .allocator = allocator,
-            .ui = ui,
+            .terminal_ui = ui,
             .agent = agent,
             .loop = try xev.Loop.init(.{}),
             .should_quit = false,
@@ -48,14 +48,14 @@ const InteractiveMode = struct {
 
     pub fn run(self: *InteractiveMode) !void {
         // Get termbox TTY fd for input watching
-        const tty_fd = try self.ui.getTtyFd();
+        const tty_fd = try self.terminal_ui.getTtyFd();
 
         // Set up TTY file watcher
         var tty_file = xev.File{ .fd = tty_fd };
         tty_file.poll(&self.loop, &self.tty_completion, xev.PollEvent.read, InteractiveMode, self, onTtyReady);
 
         // Initial render
-        try self.ui.render();
+        try self.terminal_ui.render();
 
         // Run event loop
         try self.loop.run(.until_done);
@@ -68,17 +68,16 @@ const InteractiveMode = struct {
         _: xev.File,
         result: xev.PollError!xev.PollEvent,
     ) xev.CallbackAction {
-        // zlinter-disable-next-line no_swallow_error - Event loop error handling
         const self = self_opt orelse return .disarm;
         _ = result catch return .disarm;
 
         // zlinter-disable no_swallow_error - UI rendering errors shouldn't stop event loop
         // Process any available terminal events
-        while (self.ui.pollEvent() catch null) |event| {
+        while (self.terminal_ui.pollEvent() catch null) |event| {
             if (event.type == .key) {
                 self.handleKeyEvent(event);
             } else if (event.type == .resize) {
-                self.ui.handleResize();
+                self.terminal_ui.handleResize();
             }
 
             if (self.should_quit) {
@@ -87,7 +86,7 @@ const InteractiveMode = struct {
         }
 
         // Re-render after processing events
-        self.ui.render() catch {};
+        self.terminal_ui.render() catch {};
 
         return if (self.should_quit) .disarm else .rearm;
         // zlinter-enable no_swallow_error
@@ -98,10 +97,10 @@ const InteractiveMode = struct {
         if (event.key == terminal.key.CTRL_C) {
 
             // Check if waiting for confirmation - cancel it
-            if (self.ui.waiting_for_confirmation.load(.acquire)) {
-                self.ui.confirmation_result.store(false, .release);
-                self.ui.confirmation_done.store(true, .release);
-                self.ui.waiting_for_confirmation.store(false, .release);
+            if (self.terminal_ui.waiting_for_confirmation.load(.acquire)) {
+                self.terminal_ui.confirmation_result.store(false, .release);
+                self.terminal_ui.confirmation_done.store(true, .release);
+                self.terminal_ui.waiting_for_confirmation.store(false, .release);
                 return;
             }
             self.should_quit = true;
@@ -109,17 +108,17 @@ const InteractiveMode = struct {
         }
 
         // Handle confirmation input if waiting
-        if (self.ui.waiting_for_confirmation.load(.acquire)) {
+        if (self.terminal_ui.waiting_for_confirmation.load(.acquire)) {
             if (event.ch == 'Y' or event.ch == 'y') {
-                self.ui.confirmation_result.store(true, .release);
-                self.ui.confirmation_done.store(true, .release);
-                self.ui.waiting_for_confirmation.store(false, .release);
+                self.terminal_ui.confirmation_result.store(true, .release);
+                self.terminal_ui.confirmation_done.store(true, .release);
+                self.terminal_ui.waiting_for_confirmation.store(false, .release);
                 return;
             }
             if (event.ch == 'N' or event.ch == 'n' or event.key == terminal.key.ENTER) {
-                self.ui.confirmation_result.store(false, .release);
-                self.ui.confirmation_done.store(true, .release);
-                self.ui.waiting_for_confirmation.store(false, .release);
+                self.terminal_ui.confirmation_result.store(false, .release);
+                self.terminal_ui.confirmation_done.store(true, .release);
+                self.terminal_ui.waiting_for_confirmation.store(false, .release);
                 return;
             }
             // Ignore other keys while waiting
@@ -129,7 +128,7 @@ const InteractiveMode = struct {
         if (event.key == terminal.key.ENTER) {
 
             // Get input and process it
-            const input = self.ui.getAndClearInput() catch return;
+            const input = self.terminal_ui.getAndClearInput() catch return;
             if (input.len == 0) {
                 self.allocator.free(input);
                 return;
@@ -144,15 +143,15 @@ const InteractiveMode = struct {
 
             // Check if agent is already running
             if (self.agent_running.load(.acquire)) {
-                self.ui.addLine("Agent is already running...", .warning) catch {};
-                self.ui.render() catch {};
+                self.terminal_ui.addLine("Agent is already running...", .warning) catch {};
+                self.terminal_ui.render() catch {};
                 self.allocator.free(input);
                 return;
             }
 
             // Add user input to display
-            self.ui.addUserInput(input) catch {};
-            self.ui.render() catch {};
+            self.terminal_ui.addUserInput(input) catch {};
+            self.terminal_ui.render() catch {};
 
             // Join previous thread if it exists
             if (self.agent_thread) |thread| {
@@ -170,7 +169,7 @@ const InteractiveMode = struct {
                 self.agent_running.store(false, .release);
                 var buf: [256]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, "Error spawning thread: {any}", .{err}) catch "Error spawning thread";
-                self.ui.addLine(msg, .error_msg) catch {};
+                self.terminal_ui.addLine(msg, .error_msg) catch {};
                 self.allocator.free(input);
                 return;
             };
@@ -179,23 +178,23 @@ const InteractiveMode = struct {
         }
 
         if (event.key == terminal.key.BACKSPACE or event.key == terminal.key.BACKSPACE2) {
-            self.ui.deleteInputChar();
+            self.terminal_ui.deleteInputChar();
             return;
         }
 
         if (event.key == terminal.key.ARROW_UP) {
-            self.ui.scrollUp();
+            self.terminal_ui.scrollUp();
             return;
         }
 
         if (event.key == terminal.key.ARROW_DOWN) {
-            self.ui.scrollDown();
+            self.terminal_ui.scrollDown();
             return;
         }
 
         // Regular character input
         if (event.ch != 0 and event.ch < 128) {
-            self.ui.addInputChar(@intCast(event.ch)) catch {};
+            self.terminal_ui.addInputChar(@intCast(event.ch)) catch {};
         }
         // zlinter-enable no_swallow_error
     }
@@ -208,8 +207,8 @@ const InteractiveMode = struct {
         self.agent.executeTurn(input) catch |err| {
             var buf: [256]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, "Error: {any}", .{err}) catch "Error";
-            self.ui.addLine(msg, .error_msg) catch {};
-            self.ui.render() catch {};
+            self.terminal_ui.addLine(msg, .error_msg) catch {};
+            self.terminal_ui.render() catch {};
         };
         // zlinter-enable no_swallow_error
     }
@@ -217,10 +216,8 @@ const InteractiveMode = struct {
 
 pub fn main() !void {
     // Initialize allocator
-    // zlinter-disable-next-line no_deprecated - GPA syntax is fine in 0.15.x
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+
+    const allocator = std.heap.smp_allocator;
 
     // Get environment variables
     var env_map = try std.process.getEnvMap(allocator);

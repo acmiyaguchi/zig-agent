@@ -64,8 +64,9 @@ fn executeWriteFile(allocator: std.mem.Allocator, arguments_json: []const u8) an
     };
     defer file.close();
 
-    // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
-    file.writeAll(content) catch |err| {
+    var buf: [4096]u8 = undefined;
+    var writer = file.writer(&buf).interface;
+    writer.writeAll(content) catch |err| {
         return registry.ToolResult{
             .success = false,
             .output = try std.fmt.allocPrint(allocator, "Error writing file: {any}", .{err}),
@@ -105,8 +106,10 @@ test "write_file success" {
     // Verify file contents
     const file = try std.fs.openFileAbsolute(tmp_path, .{});
     defer file.close();
-    // zlinter-disable-next-line no_deprecated - File.readToEndAlloc is valid in Zig 0.15.x
-    const content = try file.readToEndAlloc(allocator, 1024);
+
+    var buf: [4096]u8 = undefined;
+    var reader = file.reader(&buf).interface;
+    const content = try reader.allocRemaining(allocator, .limited(1024));
     defer allocator.free(content);
     try std.testing.expectEqualStrings("hello world", content);
 }

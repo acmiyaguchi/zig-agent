@@ -26,8 +26,7 @@ fn eventHandler(update: agent_types.AgentUpdate, context: *anyopaque) void {
 }
 
 pub fn main() !void {
-    // zlinter-disable-next-line no_deprecated - GPA syntax is fine in 0.15.x
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

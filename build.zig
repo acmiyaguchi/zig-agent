@@ -189,6 +189,7 @@ fn addHarness(b: *std.Build, deps: CoreDeps) void {
             .optimize = deps.optimize,
         });
         test_mod.addImport("app", deps.lib_mod);
+        test_mod.addImport("utils", deps.utils_mod);
 
         const test_exe = b.addExecutable(.{
             .name = b.fmt("test-{s}", .{test_name}),

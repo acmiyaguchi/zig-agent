@@ -135,7 +135,8 @@ pub const Agent = struct {
             // Helper struct to track partial tool calls during streaming
             const PartialToolCall = struct {
                 index: usize,
-                // zlinter-disable-next-line field_naming - matches API response structure
+
+                // zlinter-disable-next-line field_naming - Required by external JSON API
                 id: ?std.ArrayList(u8) = null,
                 name: ?std.ArrayList(u8) = null,
                 arguments: ?std.ArrayList(u8) = null,

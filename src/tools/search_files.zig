@@ -129,8 +129,10 @@ test "search_files success" {
     {
         const file = try std.fs.createFileAbsolute(tmp_file, .{});
         defer file.close();
-        // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
-        try file.writeAll("hello world\nfoo bar\nhello again\n");
+
+        var buf: [4096]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try writer.writeAll("hello world\nfoo bar\nhello again\n");
     }
 
     const args = try std.fmt.allocPrint(allocator, "{{\"pattern\": \"hello\", \"path\": \"{s}\"}}", .{tmp_dir});
@@ -157,8 +159,10 @@ test "search_files no match" {
     {
         const file = try std.fs.createFileAbsolute(tmp_file, .{});
         defer file.close();
-        // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
-        try file.writeAll("hello world\n");
+
+        var buf: [4096]u8 = undefined;
+        var writer = file.writer(&buf).interface;
+        try writer.writeAll("hello world\n");
     }
 
     const args = try std.fmt.allocPrint(allocator, "{{\"pattern\": \"nonexistent_pattern_xyz\", \"path\": \"{s}\"}}", .{tmp_dir});

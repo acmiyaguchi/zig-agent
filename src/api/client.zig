@@ -11,14 +11,13 @@ pub const SSEEvent = union(enum) {
 };
 
 pub const SSEParser = struct {
-    // zlinter-disable-next-line no_deprecated - ArrayList is preferred over ArrayListUnmanaged in 0.15.x
-    buffer: std.ArrayListUnmanaged(u8),
+    buffer: std.ArrayList(u8),
     allocator: std.mem.Allocator,
     consumed: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator) SSEParser {
         return .{
-            .buffer = .{},
+            .buffer = std.ArrayList(u8){},
             .allocator = allocator,
             .consumed = 0,
         };
@@ -165,8 +164,10 @@ pub const APIClient = struct {
         // Write payload to stdin
         if (child.stdin) |stdin| {
             logging.debugLog("writing payload to curl stdin...", .{});
-            // zlinter-disable-next-line no_deprecated - File.writeAll is valid in Zig 0.15.x
-            stdin.writeAll(payload) catch |err| {
+
+            var buf: [4096]u8 = undefined;
+            var writer = stdin.writer(&buf).interface;
+            writer.writeAll(payload) catch |err| {
                 logging.debugLog("failed to write to stdin: {any}", .{err});
                 return error.CurlWriteFailed;
             };
