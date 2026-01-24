@@ -535,13 +535,13 @@ pub const TerminalUI = struct {
         const time_str = formatElapsedTime(elapsed, &time_buf);
 
         const dots: []const u8 = switch (self.thinking_dots_phase) {
-            0 => ".",
-            1 => "..",
+            0 => ".  ",
+            1 => ".. ",
             2 => "...",
-            3 => ".",
+            3 => ".. ",
         };
 
-        return std.fmt.bufPrint(buf, "Thinking{s} {s}", .{ dots, time_str }) catch "Thinking...";
+        return std.fmt.bufPrint(buf, "Thinking{s} {s}", .{ dots, time_str }) catch "Thinking... ";
     }
 
     /// Update the text of a line at the given index (for in-place updates)
