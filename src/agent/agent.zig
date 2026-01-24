@@ -104,8 +104,9 @@ pub const Agent = struct {
         logging.debugLog("[agent] executeTurn called with input: {s}", .{user_input});
 
         // Check memory usage
-        if (system.getCurrentRSS(self.allocator)) |rss| {
+        if (system.getCurrentRSS()) |rss| {
             if (rss >= Agent.memory_refuse_threshold) {
+                self.emit(.{ .thinking_state = .stop });
                 self.emit(.{ .@"error" = "Memory limit exceeded (45MB). Please restart." });
                 return;
             }
@@ -123,7 +124,7 @@ pub const Agent = struct {
             .content = try self.allocator.dupe(u8, user_input),
         });
 
-        self.emit(.{ .thought = "Thinking..." });
+        self.emit(.{ .thinking_state = .start });
 
         const max_turns = 10;
 
@@ -377,6 +378,7 @@ pub const Agent = struct {
                     }
                 }
             } else {
+                self.emit(.{ .thinking_state = .stop });
                 self.emit(.{ .completion = null });
                 return; // Stop if no tool calls
             }

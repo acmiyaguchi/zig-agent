@@ -2,15 +2,15 @@
 const std = @import("std");
 
 /// Get current Resident Set Size (RSS) in bytes from /proc/self/statm
-pub fn getCurrentRSS(allocator: std.mem.Allocator) ?usize {
+pub fn getCurrentRSS() ?usize {
     const statm_path = "/proc/self/statm";
     const file = std.fs.openFileAbsolute(statm_path, .{}) catch return null;
     defer file.close();
 
-    var buf: [4096]u8 = undefined;
-    var reader = file.reader(&buf).interface;
-    const content = reader.allocRemaining(allocator, .limited(1024)) catch return null;
-    defer allocator.free(content);
+    // Read directly into a stack buffer - /proc/self/statm is small
+    var buf: [256]u8 = undefined;
+    const bytes_read = file.read(&buf) catch return null;
+    const content = buf[0..bytes_read];
 
     var fields = std.mem.splitSequence(u8, content, " ");
     _ = fields.next(); // Skip first field (vsize)
@@ -27,9 +27,7 @@ pub fn getCurrentRSS(allocator: std.mem.Allocator) ?usize {
 }
 
 test "getCurrentRSS returns valid page-aligned value on linux" {
-    const allocator = std.testing.allocator;
-
-    const rss = getCurrentRSS(allocator);
+    const rss = getCurrentRSS();
 
     // Should return non-null on Linux (where /proc/self/statm exists)
     try std.testing.expect(rss != null);

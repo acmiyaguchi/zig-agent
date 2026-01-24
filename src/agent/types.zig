@@ -1,5 +1,11 @@
+pub const ThinkingState = enum {
+    start,
+    stop,
+};
+
 pub const AgentUpdate = union(enum) {
     thought: []const u8,
+    thinking_state: ThinkingState,
     message_chunk: []const u8,
     tool_call: struct {
         // zlinter-disable-next-line field_naming - Required by external JSON API

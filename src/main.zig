@@ -24,8 +24,15 @@ const InteractiveMode = struct {
     // Completion for TTY polling
     tty_completion: xev.Completion,
 
+    // Animation timer (200ms interval)
+    animation_timer: xev.Timer,
+    animation_completion: xev.Completion,
+
     // Thread for agent execution
     agent_thread: ?std.Thread,
+
+    // Animation interval in milliseconds (200ms)
+    const animation_interval_ms: u64 = 200;
 
     pub fn init(allocator: std.mem.Allocator, ui: *TerminalUI, agent: *agent_lib.Agent) !InteractiveMode {
         return InteractiveMode{
@@ -36,6 +43,8 @@ const InteractiveMode = struct {
             .should_quit = false,
             .agent_running = std.atomic.Value(bool).init(false),
             .tty_completion = undefined,
+            .animation_timer = try xev.Timer.init(),
+            .animation_completion = undefined,
             .agent_thread = null,
         };
     }
@@ -45,6 +54,7 @@ const InteractiveMode = struct {
         if (self.agent_thread) |thread| {
             thread.join();
         }
+        self.animation_timer.deinit();
         self.loop.deinit();
     }
 
@@ -55,6 +65,9 @@ const InteractiveMode = struct {
         // Set up TTY file watcher
         var tty_file = xev.File{ .fd = tty_fd };
         tty_file.poll(&self.loop, &self.tty_completion, xev.PollEvent.read, InteractiveMode, self, onTtyReady);
+
+        // Set up animation timer (200ms interval)
+        self.animation_timer.run(&self.loop, &self.animation_completion, animation_interval_ms, InteractiveMode, self, onAnimationTick);
 
         // Initial render
         try self.terminal_ui.render();
@@ -238,6 +251,36 @@ const InteractiveMode = struct {
                 logging.debugLog("render error: {any}", .{render_err});
             };
         };
+        // zlinter-enable no_swallow_error
+    }
+
+    fn onAnimationTick(
+        self_opt: ?*InteractiveMode,
+        loop: *xev.Loop,
+        c: *xev.Completion,
+        result: xev.Timer.RunError!void,
+    ) xev.CallbackAction {
+        const self = self_opt orelse return .disarm;
+        _ = result catch return .disarm;
+
+        // zlinter-disable no_swallow_error - Animation tick errors shouldn't stop the UI
+        // Advance thinking dots phase and update thinking line if active
+        self.terminal_ui.advanceThinkingPhase();
+        self.terminal_ui.updateThinkingLine();
+
+        // Re-render to update session timer and thinking animation
+        self.terminal_ui.render() catch |err| {
+            logging.debugLog("render error in onAnimationTick: {any}", .{err});
+        };
+
+        // Continue timer unless quitting
+        if (self.should_quit) {
+            return .disarm;
+        }
+
+        // Rearm timer for next tick
+        self.animation_timer.run(loop, c, animation_interval_ms, InteractiveMode, self, onAnimationTick);
+        return .disarm; // We manually rearm, so disarm the automatic rearm
         // zlinter-enable no_swallow_error
     }
 };

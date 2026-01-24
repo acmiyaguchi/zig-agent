@@ -165,9 +165,7 @@ pub const APIClient = struct {
         if (child.stdin) |stdin| {
             logging.debugLog("writing payload to curl stdin...", .{});
 
-            var buf: [4096]u8 = undefined;
-            var writer = stdin.writer(&buf).interface;
-            writer.writeAll(payload) catch |err| {
+            stdin.writeAll(payload) catch |err| {
                 logging.debugLog("failed to write to stdin: {any}", .{err});
                 return error.CurlWriteFailed;
             };

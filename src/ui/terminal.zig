@@ -74,6 +74,13 @@ pub const TerminalUI = struct {
     total_output_tokens: u32 = 0,
     mutex: std.Thread.Mutex,
 
+    // Timer state for animations
+    session_start_ns: i128 = 0,
+    thinking_start_ns: i128 = 0,
+    is_thinking: bool = false,
+    thinking_dots_phase: u2 = 0, // 0, 1, 2 for ".", "..", "..."
+    thinking_line_index: ?usize = null,
+
     // Confirmation state (for cross-thread coordination)
     waiting_for_confirmation: std.atomic.Value(bool),
     confirmation_result: std.atomic.Value(bool),
@@ -135,6 +142,7 @@ pub const TerminalUI = struct {
         self.initialized = true;
         self.width = @intCast(tb.width());
         self.height = @intCast(tb.height());
+        self.session_start_ns = std.time.nanoTimestamp();
     }
 
     /// Get TTY file descriptor for polling
@@ -504,6 +512,70 @@ pub const TerminalUI = struct {
         }
     }
 
+    /// Format elapsed nanoseconds as M:SS or H:MM:SS
+    fn formatElapsedTime(elapsed_ns: i128, buf: []u8) []const u8 {
+        const elapsed_secs: u64 = @intCast(@max(0, @divFloor(elapsed_ns, std.time.ns_per_s)));
+        const hours = elapsed_secs / 3600;
+        const minutes = (elapsed_secs % 3600) / 60;
+        const seconds = elapsed_secs % 60;
+
+        if (hours > 0) {
+            return std.fmt.bufPrint(buf, "{d}:{d:0>2}:{d:0>2}", .{ hours, minutes, seconds }) catch "?:??:??";
+        } else {
+            return std.fmt.bufPrint(buf, "{d}:{d:0>2}", .{ minutes, seconds }) catch "?:??";
+        }
+    }
+
+    /// Build thinking text with current dots phase and timer
+    fn getThinkingText(self: *TerminalUI, buf: []u8) []const u8 {
+        const now = std.time.nanoTimestamp();
+        const elapsed = now - self.thinking_start_ns;
+
+        var time_buf: [16]u8 = undefined;
+        const time_str = formatElapsedTime(elapsed, &time_buf);
+
+        const dots: []const u8 = switch (self.thinking_dots_phase) {
+            0 => ".",
+            1 => "..",
+            2 => "...",
+            3 => ".",
+        };
+
+        return std.fmt.bufPrint(buf, "Thinking{s} {s}", .{ dots, time_str }) catch "Thinking...";
+    }
+
+    /// Update the text of a line at the given index (for in-place updates)
+    fn updateLineTextLocked(self: *TerminalUI, index: usize, new_text: []const u8) !void {
+        if (index >= self.output_lines.items.len) return;
+
+        const old_line = self.output_lines.items[index];
+        const new_text_copy = try self.allocator.dupe(u8, new_text);
+        self.allocator.free(old_line.text);
+        self.output_lines.items[index].text = new_text_copy;
+    }
+
+    /// Update the thinking line with current animation state
+    pub fn updateThinkingLine(self: *TerminalUI) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        if (!self.is_thinking) return;
+        if (self.thinking_line_index) |idx| {
+            var buf: [64]u8 = undefined;
+            const new_text = self.getThinkingText(&buf);
+            self.updateLineTextLocked(idx, new_text) catch |err| {
+                logging.debugLog("updateLineTextLocked error: {any}", .{err});
+            };
+        }
+    }
+
+    /// Advance the thinking animation dots phase
+    pub fn advanceThinkingPhase(self: *TerminalUI) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.thinking_dots_phase = @addWithOverflow(self.thinking_dots_phase, 1)[0];
+    }
+
     /// Render token usage in status area
     pub fn renderTokenStatus(self: *TerminalUI) !void {
         // Locked by caller (render)
@@ -514,17 +586,27 @@ pub const TerminalUI = struct {
         if (!self.initialized) return;
         if (self.height < 3) return;
 
+        const status_row = self.height - 2;
+
+        // Build session timer
+        var session_time_buf: [16]u8 = undefined;
+        const now = std.time.nanoTimestamp();
+        const session_elapsed = now - self.session_start_ns;
+        const session_time = formatElapsedTime(session_elapsed, &session_time_buf);
+
+        // Build status string: "Session: M:SS | Tokens: X.XK" or just "Session: M:SS"
+        var status_buf: [80]u8 = undefined;
         const total = self.total_input_tokens + self.total_output_tokens;
-        if (total == 0) return;
 
-        var buf: [32]u8 = undefined;
-        const formatted = formatTokenCount(total, &buf);
-
-        var status_buf: [64]u8 = undefined;
-        const status = std.fmt.bufPrint(&status_buf, "Tokens: {s}", .{formatted}) catch "Tokens: ?";
+        const status = if (total > 0) blk: {
+            var token_buf: [32]u8 = undefined;
+            const formatted = formatTokenCount(total, &token_buf);
+            break :blk std.fmt.bufPrint(&status_buf, "Session: {s} | Tokens: {s}", .{ session_time, formatted }) catch "Session: ?";
+        } else blk: {
+            break :blk std.fmt.bufPrint(&status_buf, "Session: {s}", .{session_time}) catch "Session: ?";
+        };
 
         // Draw at the right side of the status row
-        const status_row = self.height - 2;
         const x = if (self.width > status.len) self.width - status.len - 1 else 0;
         try self.drawText(x, status_row, status, color_system);
     }
@@ -651,6 +733,31 @@ pub const TerminalUI = struct {
                 self.addLine(t, .thinking) catch |err| {
                     logging.debugLog("addLine thought error: {any}", .{err});
                 };
+            },
+            .thinking_state => |state| {
+                self.mutex.lock();
+                switch (state) {
+                    .start => {
+                        self.is_thinking = true;
+                        self.thinking_start_ns = std.time.nanoTimestamp();
+                        self.thinking_dots_phase = 0;
+                        // Add initial thinking line and store its index
+                        var buf: [64]u8 = undefined;
+                        const text = self.getThinkingText(&buf);
+                        self.addLineLocked(text, .thinking) catch |err| {
+                            logging.debugLog("addLine thinking start error: {any}", .{err});
+                        };
+                        self.thinking_line_index = if (self.output_lines.items.len > 0)
+                            self.output_lines.items.len - 1
+                        else
+                            null;
+                    },
+                    .stop => {
+                        self.is_thinking = false;
+                        self.thinking_line_index = null;
+                    },
+                }
+                self.mutex.unlock();
             },
             .message_chunk => |chunk| {
                 // For streaming, append to last assistant line

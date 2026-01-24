@@ -15,6 +15,7 @@ fn eventHandler(update: agent_types.AgentUpdate, context: *anyopaque) void {
     _ = context;
     switch (update) {
         .thought => |t| std.debug.print("Thought: {s}\n", .{t}),
+        .thinking_state => |state| std.debug.print("[Thinking: {s}]\n", .{@tagName(state)}),
         .message_chunk => |c| std.debug.print("{s}", .{c}),
         .tool_call => |tc| std.debug.print("\nTool Call: {s}({s})\n", .{ tc.name, tc.arguments }),
         .tool_result => |tr| std.debug.print("Tool Result: {s}\n", .{tr.output}),
