@@ -520,9 +520,28 @@ pub const TerminalUI = struct {
         const seconds = elapsed_secs % 60;
 
         if (hours > 0) {
-            return std.fmt.bufPrint(buf, "{d}:{d:0>2}:{d:0>2}", .{ hours, minutes, seconds }) catch "?:??:??";
+            // Manual padding for hours case
+            var min_str: [3]u8 = undefined;
+            if (minutes < 10) _ = std.fmt.bufPrint(&min_str, "0{d}", .{minutes}) catch return "?:??:??";
+            if (minutes >= 10) _ = std.fmt.bufPrint(&min_str, "{d}", .{minutes}) catch return "?:??:??";
+
+            var sec_str: [3]u8 = undefined;
+            if (seconds < 10) _ = std.fmt.bufPrint(&sec_str, "0{d}", .{seconds}) catch return "?:??:??";
+            if (seconds >= 10) _ = std.fmt.bufPrint(&sec_str, "{d}", .{seconds}) catch return "?:??:??";
+
+            // Note: bufPrint returns the slice of the buffer used, not the full buffer.
+            // Using a simplified approach to avoid complexity with bufPrint return values in this specific construct:
+            if (minutes < 10 and seconds < 10) return std.fmt.bufPrint(buf, "{d}:0{d}:0{d}", .{ hours, minutes, seconds }) catch "?:??:??";
+            if (minutes < 10 and seconds >= 10) return std.fmt.bufPrint(buf, "{d}:0{d}:{d}", .{ hours, minutes, seconds }) catch "?:??:??";
+            if (minutes >= 10 and seconds < 10) return std.fmt.bufPrint(buf, "{d}:{d}:0{d}", .{ hours, minutes, seconds }) catch "?:??:??";
+            return std.fmt.bufPrint(buf, "{d}:{d}:{d}", .{ hours, minutes, seconds }) catch "?:??:??";
         } else {
-            return std.fmt.bufPrint(buf, "{d}:{d:0>2}", .{ minutes, seconds }) catch "?:??";
+            // Manual padding to avoid alignBuffer panic in std.fmt
+            if (seconds < 10) {
+                return std.fmt.bufPrint(buf, "{d}:0{d}", .{ minutes, seconds }) catch "?:??";
+            } else {
+                return std.fmt.bufPrint(buf, "{d}:{d}", .{ minutes, seconds }) catch "?:??";
+            }
         }
     }
 
@@ -848,19 +867,20 @@ pub const TerminalUI = struct {
         try self.addLine(msg, .user_input);
     }
 
+    /// Format the confirmation message
+    fn getConfirmationMessage(tool_name: []const u8, arguments: []const u8, buf: []u8) ![]const u8 {
+        return std.fmt.bufPrint(buf, "Execute tool? [Y/n] (Tool: {s}, Args: {s})", .{
+            tool_name,
+            arguments,
+        });
+    }
+
     /// Request confirmation from user for a tool execution
     /// Returns true if confirmed (Y/y), false if denied (N/n/Enter)
     pub fn requestConfirmation(self: *TerminalUI, tool_name: []const u8, arguments: []const u8) bool {
         // zlinter-disable no_swallow_error - UI confirmation flow intentionally ignores errors
         var buf: [1024]u8 = undefined;
-        const suffix = std.fmt.bufPrint(&buf, " [Y/n] (Tool: {s}, Args: {s})", .{
-            tool_name,
-            arguments,
-        }) catch "";
-
-        const msg = std.fmt.bufPrint(&buf, "Execute tool? {s}", .{
-            suffix,
-        }) catch "Execute tool? [Y/n] ";
+        const msg = getConfirmationMessage(tool_name, arguments, &buf) catch "Execute tool? [Y/n] ";
 
         // Add the confirmation line
         self.addLine(msg, .warning) catch |err| {
@@ -1164,4 +1184,15 @@ test "countLineWraps with newlines at various positions" {
 
     // Newline at end
     try std.testing.expectEqual(@as(usize, 2), terminal_ui.countLineWraps("hello\n"));
+}
+
+test "confirmation message formatting" {
+    var buf: [1024]u8 = undefined;
+    const tool_name = "read_file";
+    const arguments = "{\"path\": \"/tmp/foo\"}";
+
+    // Test the actual helper function
+    const msg = try TerminalUI.getConfirmationMessage(tool_name, arguments, &buf);
+
+    try std.testing.expectEqualStrings("Execute tool? [Y/n] (Tool: read_file, Args: {\"path\": \"/tmp/foo\"})", msg);
 }

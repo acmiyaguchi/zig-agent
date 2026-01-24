@@ -9,6 +9,7 @@ const agent_types = app.agent.types;
 const client = app.api.client;
 const registry = app.api.registry;
 const read_file = app.tools.read_file;
+const list_dir = app.tools.list_directory;
 const agent_lib = app.agent.agent;
 
 fn eventHandler(update: agent_types.AgentUpdate, context: *anyopaque) void {
@@ -48,6 +49,9 @@ pub fn main() !void {
     const rf_tool = try read_file.initTool(tool_registry.arena.allocator());
     try tool_registry.register(rf_tool);
 
+    const ld_tool = try list_dir.initTool(tool_registry.arena.allocator());
+    try tool_registry.register(ld_tool);
+
     var dummy_ctx: i32 = 0;
     var agent = agent_lib.Agent.init(allocator, &api_client, &tool_registry, eventHandler, &dummy_ctx);
     defer agent.deinit();
@@ -63,10 +67,19 @@ pub fn main() !void {
         try writer.writeAll("Hello from test file!");
     }
 
-    const prompt = try std.fmt.allocPrint(allocator, "Read {s} and tell me what it says.", .{test_file});
-    defer allocator.free(prompt);
+    // First prompting
+    {
+        const prompt = try std.fmt.allocPrint(allocator, "Read {s} and tell me what it says.", .{test_file});
+        defer allocator.free(prompt);
 
-    std.debug.print("User: {s}\n", .{prompt});
+        std.debug.print("\nUser: {s}\n", .{prompt});
+        try agent.executeTurn(prompt);
+    }
 
-    try agent.executeTurn(prompt);
+    // Second prompting
+    {
+        const prompt = "what is the current directory";
+        std.debug.print("\nUser: {s}\n", .{prompt});
+        try agent.executeTurn(prompt);
+    }
 }
